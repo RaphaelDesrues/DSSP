@@ -1,3 +1,1 @@
 # DSSP
-
-# Test commit
