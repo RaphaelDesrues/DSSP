@@ -5,26 +5,29 @@
 import os
 import sys
 import numpy as np
+# import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')  # ou 'Agg', 'Qt5Agg', etc.
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
-def check_file_exists(file_path):
-    """Check if a file exists
-    """
-    if len(sys.argv) != 2:
-        sys.exit("Il faut un fichier PDB")
+def check_file_exists():
+        """Check if a file exists"""
+        if len(sys.argv) != 2:
+            sys.exit("Il faut un fichier PDB")
     
-    file_path = sys.argv[1]
+        file_path = sys.argv[1]
     
-    return file_path
+        return file_path
 
 
 def read_pdb(file_path):
-    """Open a PDB file and output backbone atoms within a protein
-    """
-    
-    atoms = ["C", "O", "N", "H"]
-    position = []
+    """Open a PDB file and output backbone atoms within a protein"""
 
+    atoms = ["C", "O", "N", "H"]
+    
+    system = System(atoms=None, hbonds=None)
 
     with open(file_path, 'r') as f_in:
 
@@ -33,12 +36,14 @@ def read_pdb(file_path):
         for line in lines:
 
             if line.startswith("ATOM") and line[12:16].strip() in atoms:
-                
-                chain = float(line[21:22].strip())
 
-                resid = float(line[22:26].strip())
+                position = []
 
-                name = float(line[17:20].strip())
+                chain = str(line[21:22].strip())
+
+                resid = int(line[22:26].strip())
+
+                name = str(line[12:16].strip())
 
                 x_coords = float(line[30:38].strip())
                 y_coords = float(line[38:46].strip())
@@ -46,36 +51,36 @@ def read_pdb(file_path):
 
                 position.append((x_coords, y_coords, z_coords))
 
-        
-            System.add_atom(chain, resid, name, position)
-
-
-def dist(atom1: np.ndarray, atom2: np.ndarray) -> float:
-    """Compute distance between 2 atoms"""
-
-    d = np.sqrt(((atom1 - atom2)**2).sum())
-
-    return d
-
-
-def angle(atom1: np.ndarray, atom2: np.ndarray, atom3: np.ndarray) -> float:
-    """Compute angle between 3 atoms"""
+                system.add_atom(chain, resid, name, position)
     
-    v1 = atom1 - atom2
-    v2 = atom3 - atom3
+    return system
 
-    angle = np.arccos((v1 * v2).sum()) / ((np.sqrt(v1**2).sum()) * (np.sqrt(v2**2).sum()))
 
-    return angle
+def remove_residues(system):
+    """Retire tous les résidus du système avec moins de 4 atomes."""
 
+    residue_count = {}
+    
+    for atom in system.atoms:
+
+        if atom.resid in residue_count:
+            residue_count[atom.resid] += 1
+        
+        else:
+            residue_count[atom.resid] = 1
+
+    system.atoms = [atom for atom in system.atoms if residue_count[atom.resid] >= 4]
+
+    return system
+    
 
 class Atom:
     """Docstring class"""
 
     def __init__(
         self,
-        chain : str,
-        resid: str,
+        chain: str,
+        resid: int,
         name: str,
         position: np.ndarray
     ):
@@ -86,9 +91,9 @@ class Atom:
 
         """
 
-        self.chain = name
-        self.resid = chain
-        self.name = resid
+        self.chain = chain
+        self.resid = resid
+        self.name = name
         self.position = position
 
 
@@ -98,12 +103,7 @@ class System:
     def __init__(
         self,
         atoms: list,
-        hbonds: list,
-        nturn: list,
-        helix: list,
-        bridge: dict,
-        ladder: dict,
-        sheet: list
+        hbonds: np.ndarray,
     ):
         """Docstring
         
@@ -112,68 +112,153 @@ class System:
         
         """
 
+        if atoms is None:
+            atoms = []
+        if hbonds is None:
+            hbonds = np.empty((0, 0))
+
         self.atoms = atoms
         self.hbonds = hbonds
-        self.nturn = nturn
-        self.helix = helix
-        self.bridge = bridge
-        self.ladder = ladder
-        self.sheet = sheet
 
 
     def add_atom(
         self,
-        name: str,
         chain: str,
-        resid: str,
+        resid: int,
+        name: str,
         position: np.ndarray
     ):
-        """Docstring"""
-
-        atom = Atom(name, chain, resid, position)
+        """Docstring""" 
+        atom = Atom(chain, resid, name, position)
         self.atoms.append(atom)
 
-        return atom
-    
+
+    def dist(self, atom1: np.ndarray, atom2: np.ndarray) -> float:
+        """Compute distance between 2 atoms"""
+        atom1 = np.array(atom1)
+        atom2 = np.array(atom2)
+
+        d = np.sqrt(((atom1 - atom2)**2).sum())
+
+        return d
+
+
+    def angle(self, atom1: np.ndarray, atom2: np.ndarray, atom3: np.ndarray) -> float:
+        """Compute angle between 3 atoms"""
+        
+        atom1 = np.array(atom1)
+        atom2 = np.array(atom2)
+        atom3 = np.array(atom3)
+
+        
+
+        v1 = (atom1 - atom2).flatten()
+        v2 = (atom3 - atom2).flatten()
+
+        # Compute scalar product
+        scalar_product = np.dot(v1, v2)
+
+        # Compute vector norms
+        norm_v1 = np.linalg.norm(v1)
+        norm_v2 = np.linalg.norm(v2)
+
+        angle = np.degrees(np.arccos(scalar_product / (norm_v1 * norm_v2)))
+
+        return angle
+
 
     def hbonds_calc(self):
         """Compute hbonds in whole protein"""
-
-        
-        # for atom1 in (self.atom.name in "N"):
-        #     for self.atom.name in "O":
-        #         dist = dist()
-        #         angle = angle()
-
-        #         if dist < 5.2 and angle < 63:
-        #             self.hbonds.append([])
-
-
 
         N_atoms = [atom1 for atom1 in self.atoms if atom1.name == "N"]
         O_atoms = [atom2 for atom2 in self.atoms if atom2.name == "O"]
         H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H"]
 
-        # for atom1 in N_atoms:
+        # Create empty hbond boolean matrix
+        self.hbonds = np.zeros((180, 180), dtype=bool)
 
-        #     for atom2 in O_atoms:
+        for atom1, atom3 in zip(N_atoms, H_atoms):
 
-        #         dist = dist(atom1.position, atom2.position)
+            for atom2 in (O_atoms):
+                
+                # Compute O---N distance
+                dist = self.dist(atom1.position, atom2.position)
 
-        #         atom3 = next((atom3 for atom3 in H_atoms if atom3.resid == atom1.resid), None)
-        #         angle = angle(atom1.position, atom2.position, atom3.position)
+                # Compute O---H-N angle
+                angle = self.angle(atom1.position, atom2.position, atom3.position)
+                
+                # print("DISTANCE", dist)
+                # print('ANGLE', angle)
+                
+                if dist < 5.2 and angle < 63:
+                    print("TRUE")
+                    self.hbonds[atom1.resid][atom2.resid] = 1
+                
+                else:
+                    # print("FALSE")
+                    self.hbonds[atom1.resid][atom2.resid] = 0
+        # print(self.hbonds)
+        # Add nan values in diagonal
+        # np.fill_diagonal(self.hbonds, np.nan)
 
-        #         if dist < 5.2 and angle < 63:
-        #             self.hbonds.append([atom1.resid, atom2.resid])
+
+    def plot_hbonds(self):
+        """Plot a heatmap of the hbonds"""
+        
+        # print(self.hbonds[:50, :5])
+
+        # sns.heatmap(self.hbonds, cmap='coolwarm', annot=True)
+        # plt.title("Heatmap of hbonds")
+        # plt.savefig("heatmap.png")
+        # plt.close()
+        # plt.show()
+
+        # Convertir la matrice de booléens en entiers (1 pour True, 0 pour False)
+        # hbond_matrix = self.hbonds.astype(int)
+        # print(hbond_matrix)
+        # sns.heatmap(hbond_matrix, cmap='coolwarm', annot=False)
+        # plt.title("Heatmap of hbonds")
+        # plt.savefig("heatmap.png")
+        # plt.close()
+
+        # Convertir la matrice de booléens en entiers (1 pour True, 0 pour False)
+        hbond_matrix = self.hbonds.astype(int)
+
+        # Afficher uniquement les lignes et colonnes de 25 à 160
+        subset_matrix = hbond_matrix[25:161, 25:161]  # Slicing de 25 à 160 (inclusif)
+
+        print(subset_matrix)  # Pour vérifier le contenu
+
+        sns.heatmap(subset_matrix, cmap='coolwarm', annot=False)
+        plt.title("Heatmap of hbonds")
+        plt.savefig("heatmap.png")
+        plt.close()
 
 
-        for atom1, atom2, atom3 in zip(N_atoms, O_atoms, H_atoms):
+class Dssp:
+    """Docstring system"""
 
-            dist = dist(atom1.position, atom2.position)
-            angle = angle(atom1.position, atom2.position, atom3.position)
+    def __init__(
+        self,
+        nturn: list,
+        helix: list,
+        bridge: dict,
+        ladder: dict,
+        sheet: list
+    ):
+        
+        """Docstring
+        
+        Parameters
+        ==========
+        
+        """
 
-            if dist < 5.2 and angle < 63:
-                self.hbonds.append([atom1.resid, atom2.resid])
+        self.nturn = nturn
+        self.helix = helix
+        self.bridge = bridge
+        self.ladder = ladder
+        self.sheet = sheet
 
 
     def nturn_calc(self):
@@ -279,4 +364,24 @@ class System:
 
         c_alpha = [c_atom for c_atom in self.atoms if c_atom.name == "CA"]
 
-        
+
+def main():
+    """Do main system"""
+
+    file_path = check_file_exists()
+    system = read_pdb(file_path)
+    system = remove_residues(system)
+
+    # for atom in system.atoms:
+    #     print(atom.chain, atom.resid, atom.name)
+
+
+    system.hbonds_calc()
+
+    system.plot_hbonds()
+
+
+
+
+if __name__ == "__main__":
+    main()
