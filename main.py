@@ -103,7 +103,7 @@ class System:
     def __init__(
         self,
         atoms: list,
-        hbonds: np.ndarray,
+        hbonds: np.ndarray
     ):
         """Docstring
         
@@ -150,8 +150,6 @@ class System:
         atom2 = np.array(atom2)
         atom3 = np.array(atom3)
 
-        
-
         v1 = (atom1 - atom2).flatten()
         v2 = (atom3 - atom2).flatten()
 
@@ -167,72 +165,82 @@ class System:
         return angle
 
 
-    def hbonds_calc(self):
+    def hbonds_calc(self, option):
         """Compute hbonds in whole protein"""
 
         N_atoms = [atom1 for atom1 in self.atoms if atom1.name == "N"]
         O_atoms = [atom2 for atom2 in self.atoms if atom2.name == "O"]
         H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H"]
 
-        # Create empty hbond boolean matrix
-        self.hbonds = np.zeros((180, 180), dtype=bool)
+        if option == 'matrix':
 
-        for atom1, atom3 in zip(N_atoms, H_atoms):
+            # Create empty hbond boolean matrix
+            self.hbonds = np.zeros((180, 180), dtype=bool)
 
-            for atom2 in (O_atoms):
-                
-                # Compute O---N distance
-                dist = self.dist(atom1.position, atom2.position)
+            for atom1, atom3 in zip(N_atoms, H_atoms):
 
-                # Compute O---H-N angle
-                angle = self.angle(atom1.position, atom2.position, atom3.position)
-                
-                # print("DISTANCE", dist)
-                # print('ANGLE', angle)
-                
-                if dist < 5.2 and angle < 63:
-                    print("TRUE")
-                    self.hbonds[atom1.resid][atom2.resid] = 1
-                
-                else:
-                    # print("FALSE")
-                    self.hbonds[atom1.resid][atom2.resid] = 0
-        # print(self.hbonds)
-        # Add nan values in diagonal
-        # np.fill_diagonal(self.hbonds, np.nan)
+                for atom2 in (O_atoms):
+
+                    # Compute O---N distance
+                    dist = self.dist(atom1.position, atom2.position)
+
+                    # Compute O---H-N angle
+                    angle = self.angle(atom1.position, atom2.position, atom3.position)
+
+                    if dist < 5.2 and angle < 63:
+                        self.hbonds[atom1.resid][atom2.resid] = 1
+
+                    else:
+                        self.hbonds[atom1.resid][atom2.resid] = 0
+            
+            self.plot_hbonds()
+
+            # Add nan values in diagonal
+            # np.fill_diagonal(self.hbonds, np.nan)
+        
+        if option == 'list':
+            
+            self.hbonds = []
+            
+            for atom1, atom3 in zip(N_atoms, H_atoms):
+
+                for atom2 in (O_atoms):
+                    dist = self.dist(atom1.position, atom2.position)
+                    angle = self.angle(atom1.position, atom2.position, atom3.position)
+
+                    if (dist < 5.2 and angle < 63) and (atom1.resid != atom2.resid):
+                        self.hbonds.append([atom1.resid, atom2.resid])
+            # print(self.hbonds)
+
+            # return(self.hbonds)
 
 
     def plot_hbonds(self):
         """Plot a heatmap of the hbonds"""
-        
-        # print(self.hbonds[:50, :5])
-
-        # sns.heatmap(self.hbonds, cmap='coolwarm', annot=True)
-        # plt.title("Heatmap of hbonds")
-        # plt.savefig("heatmap.png")
-        # plt.close()
-        # plt.show()
-
-        # Convertir la matrice de booléens en entiers (1 pour True, 0 pour False)
-        # hbond_matrix = self.hbonds.astype(int)
-        # print(hbond_matrix)
-        # sns.heatmap(hbond_matrix, cmap='coolwarm', annot=False)
-        # plt.title("Heatmap of hbonds")
-        # plt.savefig("heatmap.png")
-        # plt.close()
 
         # Convertir la matrice de booléens en entiers (1 pour True, 0 pour False)
         hbond_matrix = self.hbonds.astype(int)
 
-        # Afficher uniquement les lignes et colonnes de 25 à 160
-        subset_matrix = hbond_matrix[25:161, 25:161]  # Slicing de 25 à 160 (inclusif)
+        resid_values = [atome.resid for atome in self.atoms]
+        min_index = min(resid_values)
+        max_index = max(resid_values)
 
-        print(subset_matrix)  # Pour vérifier le contenu
+        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
-        sns.heatmap(subset_matrix, cmap='coolwarm', annot=False)
-        plt.title("Heatmap of hbonds")
-        plt.savefig("heatmap.png")
-        plt.close()
+        subset_matrix = hbond_matrix[min_index:max_index, min_index:max_index]
+
+        sns.heatmap(hbond_matrix, cmap='coolwarm', annot=False, ax=axs[0])
+        axs[0].set_title("Heatmap of hbonds")
+
+        sns.heatmap(subset_matrix, cmap='coolwarm',  annot=False, ax=axs[1],
+        xticklabels=list(range(min_index, max_index)), 
+        yticklabels=list(range(min_index, max_index))
+        )
+        axs[1].set_title("Heatmap of hbonds (Subset)")
+
+        # Sauvegarder et afficher
+        plt.savefig("heatmap_combined.png")
+        plt.show()
 
 
 class Dssp:
@@ -261,30 +269,48 @@ class Dssp:
         self.sheet = sheet
 
 
-    def nturn_calc(self):
+    def nturn_calc(self, system):
         """Compute nturn from hbonds"""
 
+        N_atoms = [atom1 for atom1 in system.atoms if atom1.name == "N"]
+        O_atoms = [atom2 for atom2 in system.atoms if atom2.name == "O"]
         num_test = []
 
-        for i in range(len(self.hbonds)):
+        for atom1, atom2 in zip(N_atoms, O_atoms):
 
-            num_test.append(self.hbonds[i] + 3)
-            num_test.append(self.hbonds[i] + 4)
-            num_test.append(self.hbonds[i] + 5)
+            n_index = atom1.resid
+            o_index = atom2.resid
 
-            if self.hbonds[i][1] in num_test:
+            num_test.append([n_index + 3, o_index])
+            num_test.append([n_index + 4, o_index])
+            num_test.append([n_index + 5, o_index])
 
-                self.nturn.append(self.hbonds[i][0])
+            self.nturn = [couple for couple in num_test if couple in system.hbonds]
+        
+        # print(hbonds_list)
+        # print(num_test)
+        print(f'NTURN = {self.nturn}')
 
 
     def helices_calc(self):
         """Compute alpha-helices from nturns"""
 
-        for turn, turn_plus in zip(self.nturn, self.nturn[1:]):
+        for turn in self.nturn:
 
-            if turn + 1 == turn_plus:
+            for turn_plus in self.nturn:
 
-                self.helices.append(turn)
+                if turn[0] == turn_plus[1]:
+
+                    self.helix.append(turn)
+                    self.helix.append(turn_plus)
+        
+        # print(f'HELIX = {self.helix}')
+
+        indices = [elem for sublist in self.helix for elem in sublist]
+        indices_uniques = sorted(list(set(indices)))
+
+        print(f'HELIX = {indices_uniques}')
+
 
 
     def bridge_calc(self):
@@ -367,7 +393,7 @@ class Dssp:
 
 def main():
     """Do main system"""
-
+    # system = System()
     file_path = check_file_exists()
     system = read_pdb(file_path)
     system = remove_residues(system)
@@ -376,11 +402,17 @@ def main():
     #     print(atom.chain, atom.resid, atom.name)
 
 
-    system.hbonds_calc()
+    system.hbonds_calc(option = 'list') 
 
-    system.plot_hbonds()
+    dssp = Dssp(nturn = [],
+                helix = [],
+                bridge = None,
+                ladder = None,
+                sheet = None
+                )
 
-
+    dssp.nturn_calc(system)
+    dssp.helices_calc()
 
 
 if __name__ == "__main__":
