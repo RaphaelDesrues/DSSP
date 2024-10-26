@@ -10,6 +10,16 @@ import matplotlib
 matplotlib.use('TkAgg')  # ou 'Agg', 'Qt5Agg', etc.
 import matplotlib.pyplot as plt
 import seaborn as sns
+import time
+
+import pymol
+from pymol import cmd
+
+
+# Constantes
+Q1 = 0.42
+Q2 = 0.20
+DIM_F = 332
 
 
 def check_file_exists():
@@ -165,12 +175,32 @@ class System:
         return angle
 
 
+    def energy_hbond(self, atom1, atom2, atom3, atom4):
+        """Compute energy in a H-bonding group
+        
+        atom1 = N
+        atom2 = O
+        atom3 = C
+        atom4 = H
+        """
+
+        dist_ON = 1 / self.dist(atom1, atom2)
+        dist_CH = 1 / self.dist(atom3, atom4)
+        dist_OH = 1 / self.dist(atom2, atom4)
+        dist_CN = 1 / self.dist(atom1, atom3)
+
+        energy = Q1 * Q2 * DIM_F * (dist_ON + dist_CH - dist_OH - dist_CN)
+
+        return energy
+
+
     def hbonds_calc(self, option):
         """Compute hbonds in whole protein"""
 
         N_atoms = [atom1 for atom1 in self.atoms if atom1.name == "N"]
         O_atoms = [atom2 for atom2 in self.atoms if atom2.name == "O"]
         H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H"]
+        C_atoms = [atom4 for atom4 in self.atoms if atom4.name == "C"]
 
         if option == 'matrix':
 
@@ -179,7 +209,7 @@ class System:
 
             for atom1, atom3 in zip(N_atoms, H_atoms):
 
-                for atom2 in (O_atoms):
+                for atom2, atom4 in zip(O_atoms, C_atoms):
 
                     # Compute O---N distance
                     dist = self.dist(atom1.position, atom2.position)
@@ -188,12 +218,16 @@ class System:
                     angle = self.angle(atom1.position, atom2.position, atom3.position)
 
                     if dist < 5.2 and angle < 63:
-                        self.hbonds[atom1.resid][atom2.resid] = 1
 
-                    else:
-                        self.hbonds[atom1.resid][atom2.resid] = 0
+                        energy = self.energy_hbond(atom1.position, atom2.position, atom3.position, atom4.position) / 10
+
+                        if energy < 0.5:
+                            self.hbonds[atom1.resid][atom2.resid] = 1
+                        
+                        else:
+                            continue
             
-            self.plot_hbonds()
+            self.plot_hbonds(option = option)
 
             # Add nan values in diagonal
             # np.fill_diagonal(self.hbonds, np.nan)
@@ -204,18 +238,30 @@ class System:
             
             for atom1, atom3 in zip(N_atoms, H_atoms):
 
-                for atom2 in (O_atoms):
+                for atom2, atom4 in zip(O_atoms, C_atoms):
                     dist = self.dist(atom1.position, atom2.position)
                     angle = self.angle(atom1.position, atom2.position, atom3.position)
 
                     if (dist < 5.2 and angle < 63) and (atom1.resid != atom2.resid):
-                        self.hbonds.append([atom1.resid, atom2.resid])
-            # print(self.hbonds)
+                        
+                        energy = self.energy_hbond(atom1.position, atom2.position, atom3.position, atom4.position) / 10
+                        # print(energy)
+
+                        if energy < 0.5:
+                            self.hbonds.append([atom1.resid, atom2.resid])
+            # print(f"HBONDS = {self.hbonds}")
 
             # return(self.hbonds)
+            # temp = np.zeros((180, 180))
+
+            # for i, j in self.hbonds:
+            #     temp[i, j] = True
+
+            # self.hbonds = temp
+            # self.plot_hbonds(option = option)
 
 
-    def plot_hbonds(self):
+    def plot_hbonds(self, option):
         """Plot a heatmap of the hbonds"""
 
         # Convertir la matrice de booléens en entiers (1 pour True, 0 pour False)
@@ -230,16 +276,16 @@ class System:
         subset_matrix = hbond_matrix[min_index:max_index, min_index:max_index]
 
         sns.heatmap(hbond_matrix, cmap='coolwarm', annot=False, ax=axs[0])
-        axs[0].set_title("Heatmap of hbonds")
+        axs[0].set_title(f"Heatmap of hbonds {option}")
 
         sns.heatmap(subset_matrix, cmap='coolwarm',  annot=False, ax=axs[1],
         xticklabels=list(range(min_index, max_index)), 
         yticklabels=list(range(min_index, max_index))
         )
-        axs[1].set_title("Heatmap of hbonds (Subset)")
+        axs[1].set_title(f"Heatmap of hbonds (Subset) {option}")
 
         # Sauvegarder et afficher
-        plt.savefig("heatmap_combined.png")
+        plt.savefig(f"heatmap_combined_{option}.png")
         plt.show()
 
 
@@ -269,105 +315,210 @@ class Dssp:
         self.sheet = sheet
 
 
-    def nturn_calc(self, system):
+    def nturn_calc(self, system, option):
         """Compute nturn from hbonds"""
 
-        N_atoms = [atom1 for atom1 in system.atoms if atom1.name == "N"]
-        O_atoms = [atom2 for atom2 in system.atoms if atom2.name == "O"]
-        num_test = []
+        if option == 'list':
 
-        for atom1, atom2 in zip(N_atoms, O_atoms):
+            N_atoms = [atom1 for atom1 in system.atoms if atom1.name == "N"]
+            O_atoms = [atom2 for atom2 in system.atoms if atom2.name == "O"]
+            num_test = []
 
-            n_index = atom1.resid
-            o_index = atom2.resid
+            for atom1, atom2 in zip(N_atoms, O_atoms):
 
-            num_test.append([n_index + 3, o_index])
-            num_test.append([n_index + 4, o_index])
-            num_test.append([n_index + 5, o_index])
+                n_index = atom1.resid
+                o_index = atom2.resid
 
-            self.nturn = [couple for couple in num_test if couple in system.hbonds]
+                # num_test.append([n_index + 3, o_index])
+                num_test.append([n_index + 4, o_index])
+                # num_test.append([n_index + 5, o_index])
+
+                self.nturn = [couple for couple in num_test if couple in system.hbonds]
+
+            # print(hbonds_list)
+            # print(num_test)
+            # print(f'NTURN = {self.nturn}')
         
-        # print(hbonds_list)
-        # print(num_test)
-        print(f'NTURN = {self.nturn}')
+            temp = np.zeros((180, 180))
 
+            for i, j in self.nturn:
+                temp[i, j] = True
+            
+            # print(temp)
 
-    def helices_calc(self):
+            resid_values = [atome.resid for atome in system.atoms]
+            min_index = min(resid_values)
+            max_index = max(resid_values)
+            subset_matrix = temp[min_index:max_index, min_index:max_index]
+            sns.heatmap(subset_matrix, cmap = 'coolwarm', annot = False, fmt='.2f')
+            plt.show()
+
+        if option == 'matrix':
+
+            self.nturn = np.zeros((180, 180))
+
+            for i in range(len(system.hbonds)):
+
+                for j in range(len(system.hbonds)):
+                    
+                    if system.hbonds[i][j] == True:
+                        
+                        if (system.hbonds[i + 3][j] == True) or system.hbonds[i][j + 3] == True:
+                            
+                            self.nturn[i][j] = 3
+                            
+
+                        if (system.hbonds[i + 4][j] == True) or system.hbonds[i][j + 4] == True:
+
+                            self.nturn[i][j] = 4
+                            
+                        
+                        if (system.hbonds[i + 5][j] == True) or system.hbonds[i][j + 5] == True:
+
+                            self.nturn[i][j] = 5
+                            
+                        else:
+                            continue
+
+            # resid_values = [atome.resid for atome in system.atoms]
+            # min_index = min(resid_values)
+            # max_index = max(resid_values)
+            # subset_matrix = self.nturn[min_index:max_index, min_index:max_index]
+            # sns.heatmap(subset_matrix, cmap = 'coolwarm', annot = False, fmt='.2f')
+            # plt.show()
+
+    def helices_calc(self, option):
         """Compute alpha-helices from nturns"""
-
-        for turn in self.nturn:
-
-            for turn_plus in self.nturn:
-
-                if turn[0] == turn_plus[1]:
-
-                    self.helix.append(turn)
-                    self.helix.append(turn_plus)
         
-        # print(f'HELIX = {self.helix}')
+        if option == "list":
+            
+            for turn in self.nturn:
 
-        indices = [elem for sublist in self.helix for elem in sublist]
-        indices_uniques = sorted(list(set(indices)))
+                for turn_plus in self.nturn:
 
-        print(f'HELIX = {indices_uniques}')
+                    if turn[0] == turn_plus[1]:
+
+                        self.helix.append(turn)
+                        self.helix.append(turn_plus)
+
+            # print(f'HELIX = {self.helix}')
+
+            indices = [elem for sublist in self.helix for elem in sublist]
+            indices_uniques = sorted(list(set(indices)))
+
+            # indices_uniques = '+'.join(map(str, indices_uniques))
+            # print(f'HELIX = {indices_uniques}')
+            # print(f'color red, resi {indices_uniques}')
+
+            return(indices_uniques)
 
 
+        if option == "matrix":
 
-    def bridge_calc(self):
+            indices = []
+
+            for i in range(len(self.nturn)):
+                
+                for j in range(len(self.nturn)):
+
+                    if self.nturn[i][j] == 4:
+                        
+                        indices.append(i)
+                        indices.append(j)
+            
+            indices = sorted(list(set(indices)))
+            # indices = '+'.join(map(str, indices))
+            # print(indices) 
+            return(indices)
+
+            # Matrice utile ici ?
+
+
+    def bridge_calc(self, system, option):
         """Compute bridges from Hbonds"""
 
-        premier_elem = [a[0] for a in self.hbonds]
-        deuxieme_elem = [b[1] for b in self.hbonds]
+        if option == "list":
 
-        for i_moins, i, i_plus in zip(premier_elem,
-                                      premier_elem[1:],
-                                      premier_elem[2:]):
-            
-            for j_moins, j, j_plus in zip(deuxieme_elem,
-                                          deuxieme_elem[1:],
-                                          deuxieme_elem[2:]):
-                
-                cond_1 = [i_moins, j] in self.hbonds 
-                cond_2 = [j, i_plus] in self.hbonds
-                cond_3 = [j_moins, i] in self.hbonds
-                cond_4 = [i, j_plus] in self.hbonds
-                cond_5 = [i, j] in self.hbonds
-                cond_6 = [j, i] in self.hbonds
-                cond_7 = [i_moins, j_plus] in self.hbonds
-                cond_8 = [j_moins, i_plus] in self.hbonds
+            premier_elem = [a[0] for a in system.hbonds]
+            deuxieme_elem = [a[1] for a in system.hbonds]
+            # print(f"1ER {premier_elem} 2EME {deuxieme_elem}")
 
-                if (cond_1 and cond_2) or (cond_3 and cond_4):
-                    self.bridge[i] = "P"
+            for i_moins, i, i_plus in zip(premier_elem,
+                                          premier_elem[1:],
+                                          premier_elem[2:]):
 
-                
-                elif (cond_5 and cond_6) or (cond_7 and cond_8):
-                    self.bridge[i] = "AP"
-                
-                else:
-                    self.bridge[i] = ""
+                for j_moins, j, j_plus in zip(deuxieme_elem,
+                                              deuxieme_elem[1:],
+                                              deuxieme_elem[2:]):
+
+                    cond_1 = [i_moins, j] in system.hbonds 
+                    cond_2 = [j, i_plus] in system.hbonds
+                    cond_3 = [j_moins, i] in system.hbonds
+                    cond_4 = [i, j_plus] in system.hbonds
+                    cond_5 = [i, j] in system.hbonds
+                    cond_6 = [j, i] in system.hbonds
+                    cond_7 = [i_moins, j_plus] in system.hbonds
+                    cond_8 = [j_moins, i_plus] in system.hbonds
+
+                    if (cond_1 and cond_2) or (cond_3 and cond_4):
+                        self.bridge[i] = "P"
+
+
+                    elif (cond_5 and cond_6) or (cond_7 and cond_8):
+                        self.bridge[i] = "AP"
+
+                    # else:
+                    #     # print(self.bridge)
+                    #     self.bridge[i] = ""
+
+            self.bridge = {cle: self.bridge[cle] for cle in sorted(self.bridge.keys())}
+
+            print(f"BRIDGE = {self.bridge}")
+
+        # if option == "matrix":
 
     
     def ladder_calc(self):
         """Compute beta-ladder from bridge"""
 
+        temp_key = 0
+        temp_value = ""
+        list_temp = []
+        self.ladder["AP"] = []
+        self.ladder["P"] = []
+        last_key = list(self.bridge.keys())[-1]
+
+
         for key, value in self.bridge.items():
-
-            if key == 1:
-                temp = value
-                continue
-
-            else:
-                if value == temp:
-
-                    if key == 2:
-                        self.ladder.append(1)
-
-                    self.ladder.append(key)
-                    temp = value
+            # print(key , value)
+            if temp_key == 0:
                 
-                else:
-                    temp = value
-                    continue
+                temp_key = key
+                temp_value = value
+                list_temp.append(temp_key)
+            
+            else:
+
+                if key == (temp_key + 1) and value == temp_value:
+                    list_temp.append(key)
+                    temp_key = key
+                    temp_value = value
+
+                    if key == last_key:
+                        self.ladder[temp_value].append(list_temp)
+                    
+
+                else: # Si 1 occurence ça compte ?
+                    self.ladder[temp_value].append(list_temp)
+                    temp_key = key
+                    temp_value = value
+                    list_temp = []
+                    list_temp.append(temp_key)
+
+                    if key == last_key:
+                        self.ladder[temp_value].append(list_temp)
+        
+        print(f"LADDER = {self.ladder}")
 
 
     def sheet_calc(self):
@@ -391,7 +542,30 @@ class Dssp:
         c_alpha = [c_atom for c_atom in self.atoms if c_atom.name == "CA"]
 
 
-def main():
+    def color_pymol(self, indices: list):
+        '''Open PyMOL and color according to residue list'''
+
+        # Ouvrir l'interface graphique de PyMOL
+        pymol.finish_launching()
+
+        cmd.load(f"{sys.argv[1]}")
+
+        # Assurer que le chargement est terminé avant de colorer
+        cmd.refresh()
+
+        for index in indices:
+            # print(index)
+            cmd.color("red", f"resi {index}")
+
+        output_file = f"{sys.argv[1].split('.')[0]}_processed.pdb"
+        cmd.save(output_file)
+
+        # time.sleep(10)
+
+        cmd.quit()
+
+
+def main(option):
     """Do main system"""
     # system = System()
     file_path = check_file_exists()
@@ -402,18 +576,25 @@ def main():
     #     print(atom.chain, atom.resid, atom.name)
 
 
-    system.hbonds_calc(option = 'list') 
+    system.hbonds_calc(option = option) 
 
     dssp = Dssp(nturn = [],
                 helix = [],
-                bridge = None,
-                ladder = None,
+                bridge = {},
+                ladder = {},
                 sheet = None
                 )
 
-    dssp.nturn_calc(system)
-    dssp.helices_calc()
+    dssp.nturn_calc(system, option = option)
+    # dssp.helices_calc(option = option)
+    indices = dssp.helices_calc(option = option)
+    dssp.color_pymol(indices)
+
+    dssp.bridge_calc(system, option)
+    dssp.ladder_calc()
+
+
 
 
 if __name__ == "__main__":
-    main()
+    main(option = "list")
