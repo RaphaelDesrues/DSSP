@@ -7,7 +7,7 @@ import sys
 import numpy as np
 # import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('TkAgg')  # ou 'Agg', 'Qt5Agg', etc.
+matplotlib.use('TkAgg')  # ou 'Agg', 'Qt5Agg', 'TkAgg' etc.
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
@@ -20,6 +20,7 @@ from pymol import cmd
 Q1 = 0.42
 Q2 = 0.20
 DIM_F = 332
+ENERGY_CUTOFF = -3
 
 
 def check_file_exists():
@@ -113,7 +114,7 @@ class System:
     def __init__(
         self,
         atoms: list,
-        hbonds: np.ndarray
+        hbonds: list[np.ndarray]
     ):
         """Docstring
         
@@ -197,41 +198,47 @@ class System:
     def hbonds_calc(self):
         """Compute hbonds in whole protein"""
 
-        N_atoms = [atom1 for atom1 in self.atoms if atom1.name == "N"]
-        O_atoms = [atom2 for atom2 in self.atoms if atom2.name == "O"]
-        H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H"]
-        C_atoms = [atom4 for atom4 in self.atoms if atom4.name == "C"]
+        chains = {atom.chain for atom in self.atoms}
+
+        for chain in chains:
+
+            N_atoms = [atom1 for atom1 in self.atoms if atom1.name == "N" and atom1.chain == chain]
+            O_atoms = [atom2 for atom2 in self.atoms if atom2.name == "O" and atom2.chain == chain]
+            H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H" and atom3.chain == chain]
+            C_atoms = [atom4 for atom4 in self.atoms if atom4.name == "C" and atom4.chain == chain]
 
 
-        # Create empty hbond boolean matrix
-        self.hbonds = np.zeros((180, 180), dtype=bool)
+            # Create empty hbond boolean matrix
+            self.hbonds.append(np.zeros((180, 180), dtype=bool))
 
-        for atom1, atom3 in zip(N_atoms, H_atoms):
+            for atom1, atom3 in zip(N_atoms, H_atoms):
 
-            for atom2, atom4 in zip(O_atoms, C_atoms):
+                for atom2, atom4 in zip(O_atoms, C_atoms):
 
-                # Compute O---N distance
-                dist = self.dist(atom1.position, atom2.position)
+                    # Compute O---N distance
+                    dist = self.dist(atom1.position, atom2.position)
 
-                # Compute O---H-N angle
-                angle = self.angle(atom1.position, atom2.position, atom3.position)
+                    # Compute O---H-N angle
+                    angle = self.angle(atom1.position, atom2.position, atom3.position)
 
-                if dist < 5.2 and angle < 63:
+                    if dist < 5.2 and angle < 63:
 
-                    energy = self.energy_hbond(atom1.position, atom2.position, atom3.position, atom4.position) / 10
+                        energy = self.energy_hbond(atom1.position, atom2.position, atom3.position, atom4.position) / 10
 
-                    if energy < 0.5:
-                        self.hbonds[atom1.resid][atom2.resid] = True
-                    
-                    else:
-                        continue
-        
-        self.plot_hbonds()
+                        if energy < ENERGY_CUTOFF:
+                            chain_index = chains.index(chain)
+                            print(chain_index)
+                            self.hbonds[chain_index][atom1.resid][atom2.resid] = True
 
-        # Add nan values in diagonal
-        # np.fill_diagonal(self.hbonds, np.nan)
+                        else:
+                            continue
+                        
+            # self.plot_hbonds()
 
-        # print(self.hbonds)
+            # Add nan values in diagonal
+            # np.fill_diagonal(self.hbonds, np.nan)
+
+  
 
 
     def plot_hbonds(self):
@@ -258,7 +265,7 @@ class System:
         axs[1].set_title(f"Heatmap of hbonds (Subset)")
 
         # Sauvegarder et afficher
-        plt.savefig(f"heatmap_combined.png")
+        plt.savefig(f"heatmap_combined_hbonds.png")
         plt.show()
 
 
@@ -316,14 +323,7 @@ class Dssp:
                     else:
                         continue
 
-        # resid_values = [atome.resid for atome in system.atoms]
-        # min_index = min(resid_values)
-        # max_index = max(resid_values)
-        # subset_matrix = self.nturn[min_index:max_index, min_index:max_index]
-        # sns.heatmap(subset_matrix, cmap = 'coolwarm', annot = False, fmt='.2f')
-        # plt.show()
-
-        # self.plot_heatmap(self.nturn, title = "nturn")
+        self.plot_heatmap(self.nturn, title = "nturn", display = False)
 
 
     def helices_calc(self):
@@ -339,48 +339,68 @@ class Dssp:
                     
                     self.helix[i, j] = 1 
         
-        # self.plot_heatmap(self.helix, title = "Helix")
+        self.plot_heatmap(self.helix, title = "Helix", display = False)
+
+        indices = []
+        for i in range(len(self.helix)):
+            for j in range(len(self.helix)):
+                if self.helix[i, j] != 0:
+                    indices.append([i, j])
+        
+        indices = list(set(element for sous_liste in indices for element in sous_liste))
+        return indices
 
 
     def bridge_calc(self, system):
         """Compute bridges from Hbonds"""
 
-        # 1- Faire une liste de tous les triplets hbonds qui se suivent et qui ne se superposent pas
-        # 2- Itérer en double zip sur cette liste
-        # triplets = 
+        resid_list = []
+        for i in range(len(system.hbonds)):
+            first = i
+            second = i + 1
+            third = i + 2
+            if third - first == 2:
+                resid_list.append([first, second, third])
+
 
         self.bridge = np.zeros((180, 180))
 
-        for i in range(1, len(system.hbonds) - 1):
+        for i in range(len(resid_list) - 2):
 
-            for j in range(1, len(system.hbonds) - 1):
+            for j in range(len(resid_list) - 2):
 
-                cond_1 = (system.hbonds[i - 1, j] == 1) and (system.hbonds[i, j] == 1)
-                cond_2 = (system.hbonds[i + 1, j] == 1) and (system.hbonds[i, j] == 1) 
-                cond_3 = (system.hbonds[i, j - 1] == 1) and (system.hbonds[i, j] == 1)
-                cond_4 = (system.hbonds[i, j + 1] == 1) and (system.hbonds[i, j] == 1)
-                cond_5 = (system.hbonds[i, j] == 1) and (system.hbonds[i, j] == 1)
-                cond_6 = (system.hbonds[i, j] == 1) and (system.hbonds[i, j] == 1)
-                cond_7 = (system.hbonds[i - 1, j] == 1) and (system.hbonds[i, j + 1] == 1)
-                cond_8 = (system.hbonds[i + 1, j] == 1) and (system.hbonds[i, j - 1] == 1)
+                if any(elem in resid_list[j] for elem in resid_list[i]):
+                    continue
 
+                else:
+                    a = resid_list[i]
+                    b = resid_list[j]
+                    cond_1 = (system.hbonds[a[0], b[1]]) and (system.hbonds[b[1], a[2]])
+                    cond_2 = (system.hbonds[b[0], a[1]]) and (system.hbonds[a[1], b[2]])
+                    cond_3 = (system.hbonds[a[1], b[1]]) and (system.hbonds[b[1], a[1]])
+                    cond_4 = (system.hbonds[a[0], b[2]]) and (system.hbonds[b[0], a[2]])
 
-                if (cond_1 and cond_2) or (cond_3 and cond_4):
-                    self.bridge[i, j] = 1 # P
-
-
-                elif (cond_5 and cond_6) or (cond_7 and cond_8):
-                    self.bridge[i, j] = 2 # AP
-
-        # print(f"BRIDGE = {self.bridge}")
-        # self.plot_heatmap(self.bridge, title = "Bridges")
+                    if cond_1 or cond_2:
+                        self.bridge[a[1], b[1]] = 1 # P
 
 
-    
+                    elif cond_3 or cond_4:
+                        self.bridge[a[1], b[1]] = 2 # AP
+
+        self.plot_heatmap(self.bridge, title = "Bridges", display = False)
+
+        indices = []
+        for i in range(len(self.bridge)):
+            for j in range(len(self.bridge)):
+                if self.bridge[i, j] != 0:
+                    indices.append([i, j])
+        
+        indices = list(set(element for sous_liste in indices for element in sous_liste))
+        # return indices
+
+   
     def ladder_calc(self):
         """Compute beta-ladder from bridge"""
-
-        print(len(self.bridge))
 
         self.ladder = np.zeros((180, 180))
 
@@ -388,17 +408,26 @@ class Dssp:
 
             for j in range(1, len(self.bridge) - 1):
 
-                if self.bridge[i, j] == self.bridge[i , j + 1]:
+                if self.bridge[i, j] != 0 and self.bridge[i, j] == self.bridge[i - 1, j + 1]:
                     self.ladder[i, j] = self.bridge[i, j]
-                    self.ladder[i, j + 1] = self.bridge[i, j + 1]
+                    self.ladder[i - 1, j + 1] = self.bridge[i - 1, j + 1]
 
                 else:
                     continue
 
+        self.plot_heatmap(self.ladder, title = "Ladder", display = False)
 
-        # print(f"LADDER = {self.ladder}")
+        
 
-        # self.plot_heatmap(self.ladder, title = "Ladder")
+        
+        indices = []
+        for i in range(len(self.ladder)):
+            for j in range(len(self.ladder)):
+                if self.ladder[i, j] != 0:
+                    indices.append([i, j])
+        
+        indices = list(set(element for sous_liste in indices for element in sous_liste))
+        return indices
 
 
     def sheet_calc(self):
@@ -422,7 +451,30 @@ class Dssp:
         c_alpha = [c_atom for c_atom in self.atoms if c_atom.name == "CA"]
 
 
-    def color_pymol(self, indices: list):
+    def write_DSSP(self):
+        """Write a DSSP file"""
+        with open("DSSP_FINAL", "w") as f_out:
+            # first line : PDB name, function, source 
+            f_out.write(f"{sys.argv[1].split('.')[0]}\n")
+
+            # Second line : Title of the acronyms for after
+            f_out.write(f"{'B-sheet'} {'Bridge2'} {'Bridge1'} {'Chirality'} {'Bend'} {'5turn'} {'4turn'} {'3turn'}\n")
+
+            # 3ème ligne : Sheet : A, B, C,...
+            f_out.write(f"")
+
+            # 4ème ligne : Bridge2 : A, B, C
+
+            # 5ème ligne : Bridge1 : majuscule (anti//) et minuscule (//)
+
+            # 6ème ligne : Chirality
+
+            # 7ème ligne : Bend "S"
+
+            # 8/9/10ème ligne : 5/4/3-turn
+
+
+    def color_pymol(self, indices: list, color : str):
         '''Open PyMOL and color according to residue list'''
 
         # Ouvrir l'interface graphique de PyMOL
@@ -434,25 +486,36 @@ class Dssp:
         cmd.refresh()
 
         for index in indices:
-            # print(index)
-            cmd.color("red", f"resi {index}")
+            cmd.color(f"{color}", f"resi {index}")
 
-        output_file = f"{sys.argv[1].split('.')[0]}_processed.pdb"
+        output_file = f"{sys.argv[1].split('.')[0]}_processed.pse"
+
+        if os.path.exists(output_file):
+            os.remove(output_file)
+
         cmd.save(output_file)
+        print(f"SAVED {sys.argv[1].split('.')[0]}_processed.pse")
 
         # time.sleep(10)
 
-        cmd.quit()
+        # cmd.quit()
 
     
-    def plot_heatmap(self, matrix, title):
+    def plot_heatmap(self, matrix, title, display):
         '''Plot heatmaps'''
 
         sns.heatmap(matrix, cmap = 'coolwarm', annot = False)
         plt.title(f"Heatmap of {title}")
 
-        # plt.savefig(f"heatmap_combined.png")
-        plt.show()
+        plt.savefig(f"heatmap_{title}.png")
+
+        if display == True:
+            # plt.gca().invert_yaxis()
+            plt.show()
+            plt.close()
+
+        plt.close()
+
 
 
 def main():
@@ -468,19 +531,25 @@ def main():
 
     system.hbonds_calc() 
 
-    dssp = Dssp(nturn = [],
-                helix = [],
-                bridge = [],
-                ladder = {},
-                sheet = None
-                )
+    # dssp = Dssp(nturn = [],
+    #             helix = [],
+    #             bridge = [],
+    #             ladder = [],
+    #             sheet = None
+    #             )
 
-    dssp.nturn_calc(system)
-    dssp.helices_calc()
-    # dssp.color_pymol(indices)
+    # dssp.nturn_calc(system)
+    # # dssp.helices_calc()
+    # indices = dssp.helices_calc()
+    # # dssp.color_pymol(indices, color = 'red')
 
-    dssp.bridge_calc(system)
-    dssp.ladder_calc()
+
+    # dssp.bridge_calc(system)
+    # # dssp.ladder_calc()
+    # indices = dssp.ladder_calc()
+    # # dssp.color_pymol(indices, color = 'blue')
+
+    # dssp.write_DSSP()
 
 
 
