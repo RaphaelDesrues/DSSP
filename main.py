@@ -16,6 +16,8 @@ import time
 import pymol
 from pymol import cmd
 
+import replace_H
+
 
 # Constantes
 Q1 = 0.42
@@ -36,6 +38,9 @@ def check_file_exists():
 
 def read_pdb(file_path):
     """Open a PDB file and output backbone atoms within a protein"""
+
+    # Optional : replace N-H names with 'H'
+    replace_H.process_pdb(file_path)
 
     atoms = ["C", "O", "N", "H"]
     
@@ -65,7 +70,7 @@ def read_pdb(file_path):
 
                 position.append((x_coords, y_coords, z_coords))
 
-                system.add_atom(chain, resid, name, position, resname)
+                system.add_atom(chain, resid, resname, name, position)
     
     return system
 
@@ -96,9 +101,9 @@ class Atom:
         self,
         chain: str,
         resid: int,
+        resname: str,
         name: str,
-        position: np.ndarray,
-        resname: str
+        position: np.ndarray        
     ):
         """Docstring
 
@@ -109,10 +114,10 @@ class Atom:
 
         self.chain = chain
         self.resid = resid
+        self.resname = resname
         self.name = name
         self.position = position
-        self.resname = resname
-
+        
 
 class System:
     """Docstring system"""
@@ -142,12 +147,12 @@ class System:
         self,
         chain: str,
         resid: int,
+        resname: str,
         name: str,
-        position: np.ndarray,
-        resname: str
+        position: np.ndarray        
     ):
         """Docstring""" 
-        atom = Atom(chain, resid, name, position, resname)
+        atom = Atom(chain, resid, resname, name, position)
         self.atoms.append(atom)
 
 
@@ -218,7 +223,7 @@ class System:
             H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H" and atom3.chain == chain]
             C_atoms = [atom4 for atom4 in self.atoms if atom4.name == "C" and atom4.chain == chain]
             
-            chain_index = (np.zeros((180, 180), dtype=bool))
+            chain_index = (np.zeros((1000, 1000), dtype=bool))
 
             for atom1, atom3 in zip(N_atoms, H_atoms):
 
@@ -339,7 +344,7 @@ class Dssp:
 
             hbonds_temp = self.system.hbonds[chain]
 
-            self.nturn[chain] = np.zeros((180, 180))
+            self.nturn[chain] = np.zeros((1000, 1000))
 
             for i in range(len(hbonds_temp)):
 
@@ -377,7 +382,7 @@ class Dssp:
         
         for chain in chains:
             
-            self.helix[chain] = np.zeros((180, 180))
+            self.helix[chain] = np.zeros((1000, 1000))
 
             for i in range(len(self.nturn[chain])):
 
@@ -411,7 +416,7 @@ class Dssp:
                     resid_list.append([first, second, third])
 
 
-            self.bridge[chain] = np.zeros((180, 180))
+            self.bridge[chain] = np.zeros((1000, 1000))
 
             for i in range(len(resid_list) - 2):
 
@@ -448,7 +453,7 @@ class Dssp:
 
         for chain in chains:
 
-            self.ladder[chain] = np.zeros((180, 180))
+            self.ladder[chain] = np.zeros((1000, 1000))
 
             for i in range(1, len(self.bridge[chain]) - 1):
 
@@ -460,8 +465,44 @@ class Dssp:
 
                     else:
                         continue
+
+            
+            # Crée dictionnaire avec Nomenclature
+            p = 
+            
+            ladders = {}
+
+            for i in range(1, len(self.ladder[chain]) - 1):
+
+                for j in range(1, len(self.ladder[chain]) - 1):
+
+                    if self.ladder[chain][i, j] != 0 and self.ladder[chain][i, j] == self.ladder[chain][i - 1, j + 1]:
+
+                        ladders[chain] = 
+
+                    
         
-        self.plot_heatmap(self.ladder, title = "Ladder", display = False)
+        
+
+        # Liste pour stocker les indices
+        matrix = self.ladder[chains[0]]
+        # Indices de la demi-matrice inférieure
+        indices_lower = []
+        for i in range(1, len(matrix)):  # Commence à i = 1 pour éviter la diagonale
+            for j in range(i):  # i > j
+                if matrix[i][j]:
+                    indices_lower.append((i, j))
+        
+        print("Indices de la demi-matrice inférieure :")
+        print(indices_lower)
+        
+        # # Afficher les indices
+        # print("Indices de True :", indices_lower)
+
+        self.plot_heatmap(self.ladder, title = "Ladder", display = True)
+
+
+
 
 
     def sheet_calc(self):
@@ -474,18 +515,10 @@ class Dssp:
 
         for chain in chains:
 
-            for i, j in zip(self.ladder[chain], self.ladder[chain][1:]):
+            
 
-                if i + 1 == j and len(self.sheet[chain]) < 2:
 
-                    self.sheet[chain].append(i)
-                    self.sheet[chain].append(j)
 
-                else:
-
-                    self.sheet[chain].append(j)
-
-        print(len(self.sheet))
 
 
     def bend_calc(self):
@@ -494,63 +527,30 @@ class Dssp:
         c_alpha = [c_atom for c_atom in self.atoms if c_atom.name == "CA"]
 
 
-    # def write_DSSP(self):
-    #     """Write a DSSP file"""
-    #     with open("DSSP_FINAL", "w") as f_out:
-    #         # first line : PDB name, function, source 
-    #         f_out.write(f"{sys.argv[1].split('.')[0]}\n")
-
-    #         # Second line : Title of the acronyms for after
-    #         f_out.write(f"{'B-sheet'} {'Bridge2'} {'Bridge1'} {'Chirality'} {'Bend'} {'5turn'} {'4turn'} {'3turn'}\n")
-
-    #         chains = {atom.chain for atom in self.system.atoms}
-    #         chains = sorted(chains)
-
-    #         for chain in chains:
-
-    #             for i in range(len(self.system.atoms)):
-                
-    #                 # 3ème ligne : Sheet : A, B, C,...
-                    
-    #                 f_out.write(f"{self.bridge[i]}")
-
-    #                 # 4ème ligne : Bridge2 : A, B, C
-
-    #                 # 5ème ligne : Bridge1 : majuscule (anti//) et minuscule (//)
-
-    #                 # 6ème ligne : Chirality
-
-    #                 # 7ème ligne : Bend "S"
-
-    #                 # 8/9/10ème ligne : 5/4/3-turn
-
     def write_DSSP(self):
         """Write a DSSP file"""
 
-        df_dssp = pd.DataFrame(columns=['Chain', 'Sequence', 'Name', 'Sheet', 'Bridge2', 'Bridge1', 'Helix', '5-turn', '4-turn', '3-turn'])
+        df_dssp = pd.DataFrame(columns=['Chain', 'Sequence', 'Name', 'Sheet', 'Bridge2', 'Bridge1', 'Helix', '5-turn', '4-turn', '3-turn', 'Summary'])
 
         chains = {atom.chain for atom in self.system.atoms}
         chains = sorted(chains)
 
         for chain in chains:
 
-            df = pd.DataFrame(columns=['Chain', 'Sequence', 'Name', 'Sheet', 'Bridge2', 'Bridge1', 'Helix', '5-turn', '4-turn', '3-turn'])
+            df = pd.DataFrame(columns=['Chain', 'Sequence', 'Name', 'Sheet', 'Bridge2', 'Bridge1', 'Helix', '5-turn', '4-turn', '3-turn', 'Summary'])
             
             resid_values = [atome.resid for atome in self.system.atoms if atome.chain == chain]        
-            
-            df['Sequence'] = np.arange(1, max(resid_values) + 1)
+
+            df['Sequence'] = np.arange(min(resid_values), max(resid_values) + 1)
             df['Chain'] = chain
 
-            previous_resid = 0
-            i = 1
+            previous_resid = min(resid_values) - 1
+            i = 0
             for atome in self.system.atoms:
                 if atome.chain == chain and atome.resid != previous_resid:
-                    # print(atome.resid, atome.resname)
-                    # print(df['Sequence'] == atome.resid)
                     df.loc[i, 'Name'] = atome.resname
                     previous_resid = atome.resid
                     i += 1
-
 
             df['Sheet'] = 0
             df['Bridge2'] = 0
@@ -564,6 +564,20 @@ class Dssp:
                 df.loc[i, '4-turn'] = next((x for x in self.nturn[chain][i] if x == 4), 0)
                 df.loc[i, '3-turn'] = next((x for x in self.nturn[chain][i] if x == 3), 0)
 
+                # SUMMARY
+                # df['turn_check'] = (df['4-turn'] == 4.0) | (df['3-turn'] == 3.0) | (df['5-turn'] == 5.0)
+                for i, row in df.iterrows():
+                    if row['4-turn'] == 4.0:
+                        df.at[i, 'Summary'] = 'H'
+                    elif row['3-turn'] == 3.0:
+                        df.at[i, 'Summary'] = 'G'
+                    elif row['5-turn'] == 5.0:
+                        df.at[i, 'Summary'] = 'I'
+                    else:
+                        df.at[i, 'Summary'] = ''
+
+
+
 
             df_dssp = pd.concat([df_dssp, df])
         
@@ -575,11 +589,12 @@ class Dssp:
             content = f.read()
 
         # L'en-tête avec des tabulations
-        header = 'Chain Sequence Name Sheet Bridge2 Bridge1 Helix 5-turn 4-turn 3-turn\n'
+        title = f"{sys.argv[1].split('.')[0]}\n"
+        header = 'Chain Sequence Name Sheet Bridge2 Bridge1 Helix 5-turn 4-turn 3-turn Summary\n'
 
         # Réécrire le fichier avec l'en-tête et les données
         with open('df_dssp.txt', 'w') as f:
-            f.write(header + content)
+            f.write(title + header + content)
         
         print(df_dssp)
 
@@ -701,7 +716,7 @@ def main():
 
     # dssp.sheet_calc()
 
-    dssp.write_DSSP()
+    # dssp.write_DSSP()
 
 
 
