@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import time
+import string
 
 import pymol
 from pymol import cmd
@@ -23,8 +24,9 @@ import replace_H
 Q1 = 0.42
 Q2 = 0.20
 DIM_F = 332
-ENERGY_CUTOFF = -0.5
-
+ENERGY_CUTOFF = 0.5
+ABT = string.ascii_uppercase * 4
+# ABT = np.arange(1, 100, 1)
 
 def check_file_exists():
         """Check if a file exists"""
@@ -88,7 +90,7 @@ def remove_residues(system):
         else:
             residue_count[atom.resid] = 1
 
-    system.atoms = [atom for atom in system.atoms if residue_count[atom.resid] >= 4]
+    system.atoms = [atom for atom in system.atoms if residue_count[atom.resid] >= 4 or atom.resname == "PRO"]
     
     return system
 
@@ -236,8 +238,8 @@ class System:
                     angle = self.angle(atom1.position, atom2.position, atom3.position)
 
                     if dist < 5.2 and angle < 63:
-
-                        energy = self.energy_hbond(atom1.position, atom2.position, atom3.position, atom4.position) / 10
+                        # print(f"RESID {atom1.resid}, DIST {dist}, ANGLE {angle}")
+                        energy = self.energy_hbond(atom1.position, atom2.position, atom3.position, atom4.position)
 
                         if energy < ENERGY_CUTOFF:
 
@@ -271,7 +273,7 @@ class System:
                 min_index = min(resid_values)
                 max_index = max(resid_values)
 
-                print(f"Chaine {chain}, min_index: {min_index}, max_index: {max_index}")
+                # print(f"Chaine {chain}, min_index: {min_index}, max_index: {max_index}")
                 subset_matrix = self.hbonds[chain][min_index:max_index + 1, min_index:max_index + 1]
 
                 sns.heatmap(subset_matrix, cmap='coolwarm',  annot=False, ax=axs[i],
@@ -344,7 +346,7 @@ class Dssp:
 
             hbonds_temp = self.system.hbonds[chain]
 
-            self.nturn[chain] = np.zeros((1000, 1000))
+            self.nturn[chain] = np.zeros((1000, 1000), dtype = int)
 
             for i in range(len(hbonds_temp)):
 
@@ -369,7 +371,7 @@ class Dssp:
                         else:
                             continue
                     
-        # self.plot_heatmap(matrix = self.nturn, title = "nturn", display = False)
+        self.plot_heatmap(matrix = self.nturn, title = "nturn", display = False)
 
 
     def helices_calc(self):
@@ -382,7 +384,7 @@ class Dssp:
         
         for chain in chains:
             
-            self.helix[chain] = np.zeros((1000, 1000))
+            self.helix[chain] = np.zeros((1000, 1000), dtype = int)
 
             for i in range(len(self.nturn[chain])):
 
@@ -392,7 +394,29 @@ class Dssp:
 
                         self.helix[chain][i, j] = 1 
 
-        # self.plot_heatmap(self.helix, title = "Helix", display = False)
+        self.plot_heatmap(self.helix, title = "Helix", display = True)
+
+        for chain in chains:
+
+            p = 0
+            mat_tmp = self.helix[chain]
+            
+            self.helix[chain] = np.zeros((1000, 1000), dtype = object)
+            
+            for i in range(len(mat_tmp)):
+
+                for j in range(i):
+
+                    if mat_tmp[i, j] != 0 and mat_tmp[i][j] == mat_tmp[i + 1][j + 1]:
+
+                        self.helix[chain][i, j] = ABT[p]
+                        self.helix[chain][i + 1, j + 1] = ABT[p]
+                        print("TEST", self.helix[chain][i, j], self.helix[chain][i + 1, j + 1])
+
+                    elif mat_tmp[i, j] != 0 and mat_tmp[i][j] != mat_tmp[i + 1][j + 1]:
+                        self.helix[chain][i, j] = ABT[p]
+                        print("ELSE", self.helix[chain][i, j])
+                        p += 1
 
 
     def bridge_calc(self):
@@ -440,7 +464,7 @@ class Dssp:
                         elif cond_3 or cond_4:
                             self.bridge[chain][a[1], b[1]] = 2 # AP
 
-        self.plot_heatmap(self.bridge, title = "Bridges", display = False)
+        # self.plot_heatmap(self.bridge, title = "Bridges", display = False)
 
    
     def ladder_calc(self):
@@ -453,7 +477,7 @@ class Dssp:
 
         for chain in chains:
 
-            self.ladder[chain] = np.zeros((1000, 1000))
+            self.ladder[chain] = np.zeros((1000, 1000), dtype = float)
 
             for i in range(1, len(self.bridge[chain]) - 1):
 
@@ -466,43 +490,28 @@ class Dssp:
                     else:
                         continue
 
+        # self.plot_heatmap(self.ladder, title = "Ladder", display = True)
+
+        for chain in chains:
+
+            p = 0
+            mat_tmp = self.ladder[chain]
             
-            # Crée dictionnaire avec Nomenclature
-            p = 
+            self.ladder[chain] = np.zeros((1000, 1000), dtype = object)
             
-            ladders = {}
+            for i in range(len(mat_tmp)):
 
-            for i in range(1, len(self.ladder[chain]) - 1):
+                for j in range(i+1, len(mat_tmp[i])):
 
-                for j in range(1, len(self.ladder[chain]) - 1):
-
-                    if self.ladder[chain][i, j] != 0 and self.ladder[chain][i, j] == self.ladder[chain][i - 1, j + 1]:
-
-                        ladders[chain] = 
-
-                    
-        
-        
-
-        # Liste pour stocker les indices
-        matrix = self.ladder[chains[0]]
-        # Indices de la demi-matrice inférieure
-        indices_lower = []
-        for i in range(1, len(matrix)):  # Commence à i = 1 pour éviter la diagonale
-            for j in range(i):  # i > j
-                if matrix[i][j]:
-                    indices_lower.append((i, j))
-        
-        print("Indices de la demi-matrice inférieure :")
-        print(indices_lower)
-        
-        # # Afficher les indices
-        # print("Indices de True :", indices_lower)
-
-        self.plot_heatmap(self.ladder, title = "Ladder", display = True)
+                    if mat_tmp[i, j] != 0 and mat_tmp[i][j] == mat_tmp[i + 1][j - 1]:
+                        
+                        self.ladder[chain][i, j] = ABT[p]
+                        self.ladder[chain][i + 1, j - 1] = ABT[p]
 
 
-
+                    elif mat_tmp[i, j] != 0 and mat_tmp[i][j] != mat_tmp[i + 1][j - 1]:
+                        self.ladder[chain][i, j] = ABT[p]
+                        p += 1
 
 
     def sheet_calc(self):
@@ -513,14 +522,9 @@ class Dssp:
 
         self.ladder = {}
 
-        for chain in chains:
+        # for chain in chains:
 
-            
-
-
-
-
-
+    
     def bend_calc(self):
         """Compute bend from alpha-Carbons"""
 
@@ -541,7 +545,7 @@ class Dssp:
             
             resid_values = [atome.resid for atome in self.system.atoms if atome.chain == chain]        
 
-            df['Sequence'] = np.arange(min(resid_values), max(resid_values) + 1)
+            df['Sequence'] = np.arange(min(resid_values), max(resid_values) + 1, dtype = int)
             df['Chain'] = chain
 
             previous_resid = min(resid_values) - 1
@@ -552,17 +556,18 @@ class Dssp:
                     previous_resid = atome.resid
                     i += 1
 
-            df['Sheet'] = 0
-            df['Bridge2'] = 0
-            
+            df['Sheet'] = ''
+            df['Bridge1'] = ''
+            df['Bridge2'] = ''
+            df['Helix'] = ''
 
             for i in range(max(resid_values)):
-                # df.loc[i, 'Bridge2'] = self.ladder[chain][self.ladder[chain] != 0][0] if np.any(self.ladder[chain] != 0) else 0
-                df.loc[i, 'Bridge1'] = next((x for x in self.bridge[chain][i] if x != 0), 0)
-                df.loc[i, 'Helix'] = next((x for x in self.helix[chain][i] if x != 0), 0)
-                df.loc[i, '5-turn'] = next((x for x in self.nturn[chain][i] if x == 5), 0)
-                df.loc[i, '4-turn'] = next((x for x in self.nturn[chain][i] if x == 4), 0)
-                df.loc[i, '3-turn'] = next((x for x in self.nturn[chain][i] if x == 3), 0)
+                df.loc[i, 'Bridge2'] = next((x for x in self.ladder[chain][i] if x != 0), '')
+                # df.loc[i, 'Bridge1'] = next((x for x in self.bridge[chain][i] if x != 0), 0)
+                df.loc[i, 'Helix'] = next((x for x in self.helix[chain][i] if x != 0), '')
+                df.loc[i, '5-turn'] = next((x for x in self.nturn[chain][i] if x == 5), '')
+                df.loc[i, '4-turn'] = next((x for x in self.nturn[chain][i] if x == 4), '')
+                df.loc[i, '3-turn'] = next((x for x in self.nturn[chain][i] if x == 3), '')
 
                 # SUMMARY
                 # df['turn_check'] = (df['4-turn'] == 4.0) | (df['3-turn'] == 3.0) | (df['5-turn'] == 5.0)
@@ -575,6 +580,9 @@ class Dssp:
                         df.at[i, 'Summary'] = 'I'
                     else:
                         df.at[i, 'Summary'] = ''
+                    if row['Bridge2'] != '':
+                        df.at[i, 'Summary'] = 'E'
+                    
 
 
 
@@ -590,7 +598,7 @@ class Dssp:
 
         # L'en-tête avec des tabulations
         title = f"{sys.argv[1].split('.')[0]}\n"
-        header = 'Chain Sequence Name Sheet Bridge2 Bridge1 Helix 5-turn 4-turn 3-turn Summary\n'
+        header = 'Chain Sequence  Name  Sheet  Bridge2  Bridge1  Helix  5-turn   4-turn  3-turn Summary\n'
 
         # Réécrire le fichier avec l'en-tête et les données
         with open('df_dssp.txt', 'w') as f:
@@ -716,7 +724,7 @@ def main():
 
     # dssp.sheet_calc()
 
-    # dssp.write_DSSP()
+    dssp.write_DSSP()
 
 
 

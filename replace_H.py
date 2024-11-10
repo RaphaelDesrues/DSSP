@@ -60,7 +60,7 @@ def find_closest_hydrogen(nitrogen_atom, atoms):
     for atom in atoms:
         if atom['residue'] == nitrogen_atom['residue'] and atom['chain'] == nitrogen_atom['chain'] and atom['name'].startswith('H'):
             dist = distance(nitrogen_atom, atom)
-            if dist < min_distance and dist < 1.5:
+            if dist < min_distance and dist < 1.2:
                 min_distance = dist
                 closest_hydrogen = atom
 
