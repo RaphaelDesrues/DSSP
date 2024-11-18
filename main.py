@@ -41,9 +41,6 @@ def check_file_exists():
 def read_pdb(file_path):
     """Open a PDB file and output backbone atoms within a protein"""
 
-    # Optional : replace N-H names with 'H'
-    replace_H.process_pdb(file_path)
-
     atoms = ["C", "O", "N", "H"]
     
     system = System(atoms=None, hbonds=None)
@@ -252,7 +249,7 @@ class System:
             # print(f"Nombre de True Chaine {chain} : {np.sum(chain_index)}")
         
         # print(len(self.hbonds))
-        # self.plot_hbonds()
+        self.plot_hbonds()
 
             
 
@@ -371,7 +368,7 @@ class Dssp:
                         else:
                             continue
                     
-        self.plot_heatmap(matrix = self.nturn, title = "nturn", display = False)
+        self.plot_heatmap(matrix = self.nturn, title = "nturn", display = True)
 
 
     def helices_calc(self):
@@ -390,10 +387,13 @@ class Dssp:
 
                 for j in range(len(self.nturn[chain])):
 
-                    if self.nturn[chain][i][j] == 4:
+                    if self.nturn[chain][i][j] == 4 and self.nturn[chain][i + 1][j + 1] == 4:
 
                         self.helix[chain][i, j] = 1 
-
+                        self.helix[chain][i + 1][j + 1] = 1
+                        break
+        # print("HELIX A", self.helix["A"])
+        # np.savetxt('matrix_test.txt', self.helix["A"], fmt='%d')
         self.plot_heatmap(self.helix, title = "Helix", display = True)
 
         for chain in chains:
@@ -411,13 +411,16 @@ class Dssp:
 
                         self.helix[chain][i, j] = ABT[p]
                         self.helix[chain][i + 1, j + 1] = ABT[p]
-                        print("TEST", self.helix[chain][i, j], self.helix[chain][i + 1, j + 1])
+                        print("TEST", i, j, self.helix[chain][i, j], i+1, j+1, self.helix[chain][i + 1, j + 1])
+                        break
 
                     elif mat_tmp[i, j] != 0 and mat_tmp[i][j] != mat_tmp[i + 1][j + 1]:
                         self.helix[chain][i, j] = ABT[p]
-                        print("ELSE", self.helix[chain][i, j])
+                        print("ELSE", i, j, self.helix[chain][i, j])
                         p += 1
+                        # break
 
+                    
 
     def bridge_calc(self):
         """Compute bridges from Hbonds"""
@@ -490,7 +493,7 @@ class Dssp:
                     else:
                         continue
 
-        # self.plot_heatmap(self.ladder, title = "Ladder", display = True)
+        self.plot_heatmap(self.ladder, title = "Ladder", display = False)
 
         for chain in chains:
 
@@ -513,6 +516,7 @@ class Dssp:
                         self.ladder[chain][i, j] = ABT[p]
                         p += 1
 
+        # self.plot_heatmap(self.ladder, title = "Ladder", display = True)
 
     def sheet_calc(self):
         """Compute beta-sheet from ladder"""
@@ -549,12 +553,10 @@ class Dssp:
             df['Chain'] = chain
 
             previous_resid = min(resid_values) - 1
-            i = 0
             for atome in self.system.atoms:
                 if atome.chain == chain and atome.resid != previous_resid:
-                    df.loc[i, 'Name'] = atome.resname
+                    df.loc[atome.resid - 1, 'Name'] = atome.resname
                     previous_resid = atome.resid
-                    i += 1
 
             df['Sheet'] = ''
             df['Bridge1'] = ''
@@ -562,12 +564,13 @@ class Dssp:
             df['Helix'] = ''
 
             for i in range(max(resid_values)):
-                df.loc[i, 'Bridge2'] = next((x for x in self.ladder[chain][i] if x != 0), '')
+                df.loc[i - 1, 'Bridge2'] = next((x for x in self.ladder[chain][i] if x != 0), '')
                 # df.loc[i, 'Bridge1'] = next((x for x in self.bridge[chain][i] if x != 0), 0)
-                df.loc[i, 'Helix'] = next((x for x in self.helix[chain][i] if x != 0), '')
-                df.loc[i, '5-turn'] = next((x for x in self.nturn[chain][i] if x == 5), '')
-                df.loc[i, '4-turn'] = next((x for x in self.nturn[chain][i] if x == 4), '')
-                df.loc[i, '3-turn'] = next((x for x in self.nturn[chain][i] if x == 3), '')
+                df.loc[i - 1, 'Helix'] = next((x for x in self.helix[chain][i] if x != 0), '')
+                df.loc[i - 1, '5-turn'] = next((x for x in self.nturn[chain][i] if x == 5), '')
+                # print(next((x for x in self.nturn[chain][i] if x == 4), ''))
+                df.loc[i - 1, '4-turn'] = next((x for x in self.nturn[chain][i] if x == 4), '')
+                df.loc[i - 1, '3-turn'] = next((x for x in self.nturn[chain][i] if x == 3), '')
 
                 # SUMMARY
                 # df['turn_check'] = (df['4-turn'] == 4.0) | (df['3-turn'] == 3.0) | (df['5-turn'] == 5.0)
@@ -580,6 +583,7 @@ class Dssp:
                         df.at[i, 'Summary'] = 'I'
                     else:
                         df.at[i, 'Summary'] = ''
+                    
                     if row['Bridge2'] != '':
                         df.at[i, 'Summary'] = 'E'
                     
@@ -687,11 +691,15 @@ class Dssp:
                 plt.show()
 
 
-
 def main():
     """Do main system"""
     # system = System()
+    
     file_path = check_file_exists()
+    
+    # Optional : replace N-H names with 'H'
+    file_path = replace_H.process_pdb(file_path)
+
     system = read_pdb(file_path)
     system = remove_residues(system)
 

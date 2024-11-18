@@ -20,6 +20,49 @@ def add_h(file_path):
     pymol.cmd.quit()
 
 
+def reindex_pdb(input_filename):
+    """
+    Réindexe les résidus dans le fichier PDB pour que le premier résidu de chaque chaîne commence à 1.
+    Le fichier PDB est réécrit avec les résidus réindexés.
+    """
+    # Lire le fichier PDB et récupérer les lignes
+    with open(input_filename, 'r') as pdb_file:
+        lines = pdb_file.readlines()
+
+    # Créer un dictionnaire pour stocker le premier numéro de résidu pour chaque chaîne
+    chain_first_residue = {}
+
+    # Passer une première fois sur les lignes pour identifier le premier résidu de chaque chaîne
+    for line in lines:
+        if line.startswith('ATOM'):
+            chain_id = line[21]  # Chaîne est dans la colonne 21 (index 20)
+            residue_number = int(line[22:26].strip())
+            if chain_id not in chain_first_residue:
+                chain_first_residue[chain_id] = residue_number
+
+    # Réécrire le fichier PDB avec les résidus réindexés
+    with open(input_filename, 'w') as pdb_file:
+        for line in lines:
+            if line.startswith('ATOM') or line.startswith('HETATM'):
+                # Extraire les informations de la ligne
+                chain_id = line[21]
+                residue_number = int(line[22:26].strip())
+                
+                # Calculer le décalage pour cette chaîne
+                first_residue = chain_first_residue[chain_id]
+                residue_offset = first_residue - 1
+                
+                # Calculer le nouveau numéro de résidu
+                new_residue_number = residue_number - residue_offset
+                
+                # Remplacer le numéro de résidu dans la ligne
+                new_line = line[:22] + f"{new_residue_number:4d}" + line[26:]
+                pdb_file.write(new_line)
+            else:
+                # Écrire la ligne sans modification (par exemple, les lignes TER ou HEADER)
+                pdb_file.write(line)
+
+
 def parse_pdb(filename):
     """
     Parse un fichier PDB et retourne une liste d'atomes sous forme de dictionnaires.
@@ -89,8 +132,13 @@ def process_pdb(input_filename):
     # Ajouter les hydrogènes
     add_h(input_filename)
 
+    # Réindexe les numéros de résidus
+    reindex_pdb(input_filename)
+
     # Parser le fichier PDB
     atoms = parse_pdb(input_filename)
+
+    modify_pdb(atoms, input_filename)
 
     # Trouver tous les atomes d'azote
     nitrogen_atoms = [atom for atom in atoms if atom['name'] == 'N']
@@ -100,4 +148,7 @@ def process_pdb(input_filename):
         find_closest_hydrogen(nitrogen_atom, atoms)
     
     # Sauvegarder le fichier modifié
-    modify_pdb(atoms, input_filename)
+    output_filename = f"{input_filename.split('.')[0]}_modified.pdb"
+    modify_pdb(atoms, output_filename)
+
+    return output_filename
