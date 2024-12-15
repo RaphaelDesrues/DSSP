@@ -16,26 +16,32 @@ Author :
 import os
 import sys
 import string
+import time
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')  # ou 'Agg', 'Qt5Agg', 'TkAgg' etc.
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import warnings
 
 # pymol package to add Hydrogens
-# Self-made package to correctly name hydrogens
 import pymol
 from pymol import cmd
+
+# Self-made package to correctly name hydrogens
 import replace_H
+
+# Warning for NA values when df concat
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 # Constantes
-Q1 = 0.42
-Q2 = 0.20
-DIM_F = 332
-ENERGY_CUTOFF = 0.5
-ABT = string.ascii_uppercase * 4
+Q1 = 0.42 # Charge for Hbond energy calculation
+Q2 = 0.20 # Charge for Hbond energy calculation
+DIM_F = 332 # Dimensional factor
+ENERGY_CUTOFF = 0.5 # For hbonds ; can be adjusted
+ABT = string.ascii_uppercase * 4 # Alphabet repetition for labeling
 
 
 def check_file_exists():
@@ -118,12 +124,15 @@ def remove_residues(system):
     chains = {atom.chain for atom in system.atoms}
     chains = sorted(chains)
 
+    res_start = len({atom.resid for atom in system.atoms})
+
     for chain in chains:
 
         residue_count = {}
 
         atoms = [atom for atom in system.atoms if atom.chain == chain]
 
+        # Count residue atoms thanks to their resid
         for atom in atoms:
             if atom.resid in residue_count:
                 residue_count[atom.resid] += 1
@@ -131,7 +140,16 @@ def remove_residues(system):
             else:
                 residue_count[atom.resid] = 1
 
-        system.atoms.extend([atom for atom in atoms if residue_count[atom.resid] == 5 or atom.resname == "PRO"])
+        # Keep only residues with all C, O, N, H, CA ; or Proline
+        # system.atoms=[atom for atom in atoms if residue_count[atom.resid] == 5 or atom.resname == "PRO"]
+
+        for atom in atoms[:]:
+            if residue_count[atom.resid] != 5 and atom.resname != "PRO":
+                system.atoms.remove(atom)
+
+    res_end = len({atom.resid for atom in system.atoms})
+
+    print(f"\n{res_end / res_start * 100:.2f} % du fichier pdb bien formaté\n{res_start - res_end} résidus incomplet(s)\n")
 
     return system
 
@@ -312,12 +330,11 @@ class System:
         # Vectors of the edges of each plane
         v1 = (atom2 - atom1).flatten()
         v2 = (atom3 - atom2).flatten()
-        v3 = (atom3 - atom2).flatten()
-        v4 = (atom4 - atom3).flatten()
+        v3 = (atom4 - atom3).flatten()
 
         # Normal vectors to the planes ABC et BCD
         n1 = np.cross(v1, v2)
-        n2 = np.cross(v3, v4)
+        n2 = np.cross(v2, v3)
 
         n1_norm = np.linalg.norm(n1)
         n2_norm = np.linalg.norm(n2)
@@ -370,16 +387,19 @@ class System:
         chains = {atom.chain for atom in self.atoms}
         chains = sorted(chains)
 
+        # Create a dictionary of matrix for each chain
         self.hbonds = {}
 
         for chain in chains:
 
+            # Hydrogen bonds are defined with C, O, N, H atoms of the same residue
             N_atoms = [atom1 for atom1 in self.atoms if atom1.name == "N" and atom1.chain == chain]
             O_atoms = [atom2 for atom2 in self.atoms if atom2.name == "O" and atom2.chain == chain]
             H_atoms = [atom3 for atom3 in self.atoms if atom3.name == "H" and atom3.chain == chain]
             C_atoms = [atom4 for atom4 in self.atoms if atom4.name == "C" and atom4.chain == chain]
 
-            max_resid = max([atome.resid for atome in self.atoms if atome.chain == chain]) + 6 # +6 car test i/j + 5 dans nturn_calc (hbond_temp)
+            # Create the boolean matrix for hydrogen bonds
+            max_resid = max([atome.resid for atome in self.atoms if atome.chain == chain]) + 6 # +6 because test i/j + 5 in nturn_calc (hbond_temp)
             chain_index = (np.zeros((max_resid, max_resid), dtype=bool))
 
             for atom1, atom3 in zip(N_atoms, H_atoms):
@@ -403,6 +423,7 @@ class System:
                         else:
                             continue
 
+            # Save the matrix for each chain in the dict corresponding to the chainid
             self.hbonds[chain] = chain_index
 
         # self.plot_hbonds()
@@ -417,7 +438,7 @@ class System:
         if len(chains) > 1:
 
             fig, axs = plt.subplots(1, len(chains), figsize=(12, 6))
-            axs = axs.flatten()  # Aplatir les axes pour itérer facilement dessus
+            axs = axs.flatten()  # Flatten to iterate more easily on the chains
 
             for i, chain in enumerate(chains):
 
@@ -437,8 +458,7 @@ class System:
             plt.show()
 
         else:
-            # num_true = np.sum(self.hbonds[0])
-            # print(f"Nombre de True dans la matrice des liaisons hydrogène : {num_true}")
+
             resid_values = [atome.resid for atome in self.atoms]
             min_index = min(resid_values)
             max_index = max(resid_values)
@@ -536,6 +556,7 @@ class Dssp:
 
                     if hbonds_temp[i][j] == True:
 
+                        # Check if hbonds in +3, +4 or +5
                         if (hbonds_temp[i + 3][j] == True) or hbonds_temp[i][j + 3] == True:
 
                             self.nturn[chain][i][j] = 3
@@ -586,6 +607,7 @@ class Dssp:
 
                 for j in range(i):
 
+                    # Check if nturn = 4 in the next residue
                     if self.nturn[chain][i][j] == 4 and self.nturn[chain][i + 1][j + 1] == 4:
 
                         self.helix[chain][i, j] = 1
@@ -594,6 +616,7 @@ class Dssp:
 
         self.plot_heatmap(self.helix, title = "Helix", display = False)
 
+        # Convert the integer matrix in string matrix with helices labeling
         for chain in chains:
 
             p = 0
@@ -606,6 +629,9 @@ class Dssp:
 
                 for j in range(i):
 
+                    # Initiate the labeling with 'A' using the alphabet constant ABT
+                    # Same labeling continues if no breaks in the helix matrix
+                    # Otherwise, it moves to the next letter
                     if mat_tmp[i, j] != 0 and mat_tmp[i][j] == mat_tmp[i + 1][j + 1]:
 
                         self.helix[chain][i, j] = ABT[p]
@@ -645,13 +671,13 @@ class Dssp:
 
             hbonds_temp = self.system.hbonds[chain]
 
+            # Create a list of 3 overlapping residues
             resid_list = []
             for i in range(len(hbonds_temp)):
                 first = i
                 second = i + 1
                 third = i + 2
-                if third - first == 2:
-                    resid_list.append([first, second, third])
+                resid_list.append([first, second, third])
 
             max_resid = max([atome.resid for atome in self.system.atoms if atome.chain == chain])
             self.bridge[chain] = np.zeros((max_resid, max_resid))
@@ -660,12 +686,15 @@ class Dssp:
 
                 for j in range(i):
 
+                    # Select only non overlapping triplet residues
                     if any(elem in resid_list[j] for elem in resid_list[i]):
                         continue
 
                     else:
                         a = resid_list[i]
                         b = resid_list[j]
+
+                        # Define and test the condition for Parallel or Anti-parallel bridges
                         cond_1 = (hbonds_temp[a[0], b[1]]) and (hbonds_temp[b[1], a[2]])
                         cond_2 = (hbonds_temp[b[0], a[1]]) and (hbonds_temp[a[1], b[2]])
                         cond_3 = (hbonds_temp[a[1], b[1]]) and (hbonds_temp[b[1], a[1]])
@@ -710,6 +739,7 @@ class Dssp:
 
                 for j in range(1, len(self.bridge[chain]) - 1):
 
+                    # Test if bridges are connected
                     if self.bridge[chain][i, j] != 0 and self.bridge[chain][i, j] == self.bridge[chain][i - 1, j + 1]:
                         self.ladder[chain][i, j] = self.bridge[chain][i, j]
                         self.ladder[chain][i - 1, j + 1] = self.bridge[chain][i - 1, j + 1]
@@ -733,7 +763,7 @@ class Dssp:
 
         Notes
         -----
-        Sheet can be visualized with heatmap - Need letter transformation beforehand
+        Sheet can be visualized with heatmap - Need string conversion beforehand
         """
 
         chains = {atom.chain for atom in self.system.atoms}
@@ -752,11 +782,9 @@ class Dssp:
             for i in range(1, len(self.ladder[chain]) - 2):
 
                 for j in range(i):
-                    # print("COND1", "i", i, "j", j, self.ladder[chain][i, j])
-                    # print("COND2", "i", i, "j", j, self.ladder[chain][i + 1, j - 1])
 
+                    # Create lists of indices for residues i and i + 1
                     if self.ladder[chain][i, j] != 0 and self.ladder[chain][i + 1, j - 1] != 0:
-                        # print("TRUE")
                         ind_temp.append([i, j])
                         ind_temp.append([i + 1, j - 1])
 
@@ -766,12 +794,11 @@ class Dssp:
 
                         else:
                             ind_temp = [ind for sub_ind in ind_temp for ind in sub_ind]
-                            # print("GOOD", ind_temp)
                             ind_ladder[chain].append(list(dict.fromkeys(ind_temp)))
                             ind_temp = []
                             break
-            # print(ind_ladder[chain])
 
+            # Label the sheets
             abt_count = 0
 
             for m in range(len(ind_ladder[chain])):
@@ -781,21 +808,24 @@ class Dssp:
                 i_temp_2 = ind_ladder[chain][m][2]
                 j_temp_2 = ind_ladder[chain][m][3]
 
+                # Initiates the labeling with 'A'
                 if m == 0:
                     self.sheet[chain][i_temp, j_temp] = ABT[abt_count]
                     self.sheet[chain][i_temp_2, j_temp_2] = ABT[abt_count]
                     continue
 
+                # If overlapping indices, continues the labeling
                 if any(elem in ind_ladder[chain][m] for elem in ind_ladder[chain][m - 1]):
                     self.sheet[chain][i_temp, j_temp] = ABT[abt_count]
                     self.sheet[chain][i_temp_2, j_temp_2] = ABT[abt_count]
 
+                # If non-overlapping residues, moves to the next letter
                 else:
                     abt_count += 1
                     self.sheet[chain][i_temp, j_temp] = ABT[abt_count]
                     self.sheet[chain][i_temp_2, j_temp_2] = ABT[abt_count]
 
-        # self.plot_heatmap(self.sheet, title = "Sheet", display = True) # Fonctionne pas si Lettres
+        # self.plot_heatmap(self.sheet, title = "Sheet", display = True) # Does not work with string
 
 
     def bend_calc(self):
@@ -820,13 +850,11 @@ class Dssp:
 
             for i in range(2, len(c_alpha) - 3):
 
-                angle = self.system.angle(c_alpha[i - 2].position, c_alpha[i].position, c_alpha[i + 2].position) # faisable ?
+                angle = self.system.angle(c_alpha[i - 2].position, c_alpha[i].position, c_alpha[i + 2].position)
 
                 if angle > 70:
                     for j in range(i - 2, i + 3):
                         self.bend[chain][c_alpha[j].resid] = 'S'
-
-            # print('BEND', self.bend[chain])
 
 
     def chirality_calc(self):
@@ -854,8 +882,6 @@ class Dssp:
 
                 angle_diedre = self.system.dihedral_angle(c_alpha[i - 1].position, c_alpha[i].position, c_alpha[i + 1].position, c_alpha[i + 3].position)
 
-                # print('ANGLE DIEDRE', angle_diedre)
-
                 if angle_diedre > 0 and angle_diedre < 180:
 
                     self.chirality[chain][c_alpha[i].resid] = '+'
@@ -863,9 +889,6 @@ class Dssp:
                 else:
 
                     self.chirality[chain][c_alpha[i].resid] = '-'
-
-
-            # print('CHIRALITY', self.chirality[chain])
 
 
     def write_DSSP(self):
@@ -897,6 +920,7 @@ class Dssp:
             # Add the chain name
             df['Chain'] = chain
 
+            # Add the residue names
             previous_resid = min(resid_values) - 1
             for atome in self.system.atoms:
                 if atome.chain == chain and atome.resid != previous_resid:
@@ -910,11 +934,11 @@ class Dssp:
             df['Chirality'] = ''
             df['Bend'] = ''
 
-            # Fill using the lists
+            # Fill withs lists
             df['Chirality'] = df['Sequence'].apply(lambda x: self.chirality[chain].get(x, None))
             df['Bend'] = df['Sequence'].apply(lambda x: self.bend[chain].get(x, None))
 
-            # Fill using the dictionaries
+            # Fill using the dictionaries using generators
             for i in range(max(resid_values)):
                 df.loc[i - 1, 'Sheet'] = next((x for x in self.sheet[chain][i] if x != 0), '')
                 df.loc[i - 1, 'Bridge'] = next((x for x in self.ladder[chain][i] if x != 0), '')
@@ -948,46 +972,74 @@ class Dssp:
 
 
         # Save the dssp to .txt file
-        df_dssp.to_csv('df_dssp.txt', sep='\t', index=False, header=False)
+        pdb_name = sys.argv[1].split('.')[0]
+        file_name = f'DSSP_{pdb_name}.txt'
+        df_dssp.to_csv(file_name, sep='\t', index=False, header=False, float_format='%.0f')
 
         # Modify the header to adjust their spaces
-        with open('df_dssp.txt', 'r') as f:
+        with open(file_name, 'r') as f:
             content = f.read()
 
-        title = f"{sys.argv[1].split('.')[0]}\n"
+        title = f"{pdb_name}\n"
         header = 'Chain Sequence  Name  Sheet  Bridge Chirality Bend   Helix  5-turn   4-turn  3-turn  Summary\n'
 
         # Save the dssp to .txt file
-        with open('df_dssp.txt', 'w') as f:
+        with open(file_name, 'w') as f:
             f.write(title + header + content)
 
-        print(df_dssp)
+        print(f'\nWrite : {file_name}\n')
+
+        ind_helices = df_dssp.loc[df_dssp['Summary'].isin(['H']), 'Sequence'].tolist()
+        ind_sheets = df_dssp.loc[df_dssp['Summary'].isin(['E']), 'Sequence'].tolist()
+
+        print(f"\nCommandes pymol :\n"
+              f"load {sys.argv[1]}\n"
+              f"color red, resi {'+'.join(map(str, [int(num) for num in ind_helices]))}\n"
+              f"color blue, resi {'+'.join(map(str, [int(num) for num in ind_sheets]))}")
+
+        # self.color_pymol(df_dssp)
 
 
-    def color_pymol(self, indices: list, color : str):
+    def color_pymol(self, df_dssp):
         '''Open PyMOL and color according to residue list'''
+
+        # Retrieves the helices and sheet indices for pymol visualization
+        ind_helices = df_dssp.loc[df_dssp['Summary'].isin(['H']), 'Sequence'].tolist()
+        ind_sheets = df_dssp.loc[df_dssp['Summary'].isin(['E']), 'Sequence'].tolist()
 
         # Ouvrir l'interface graphique de PyMOL
         pymol.finish_launching()
+        cmd.reinitialize()
 
+        # Délai
+        time.sleep(2)
+
+        # Charger la structure (le fichier PDB)
         cmd.load(f"{sys.argv[1]}")
 
         # Assurer que le chargement est terminé avant de colorer
         cmd.refresh()
 
-        for index in indices:
-            cmd.color(f"{color}", f"resi {index}")
+        # Colorer les résidus hélice ('H')
+        for index in ind_helices:
+            cmd.color('red', f"resi {int(index)}")
 
+        # Colorer les résidus feuillet ('E')
+        for index in ind_sheets:
+            cmd.color('blue', f"resi {int(index)}")
+
+        # Définir le nom du fichier de sortie
         output_file = f"{sys.argv[1].split('.')[0]}_processed.pse"
 
+        # Supprimer le fichier de sortie existant s'il existe déjà
         if os.path.exists(output_file):
             os.remove(output_file)
 
+        # Sauvegarder l'état de PyMOL dans un fichier .pse (PyMOL session file)
         cmd.save(output_file)
         print(f"SAVED {sys.argv[1].split('.')[0]}_processed.pse")
 
-        # time.sleep(10)
-
+        # Vous pouvez fermer PyMOL avec cmd.quit() si nécessaire
         # cmd.quit()
 
 
@@ -1008,7 +1060,6 @@ class Dssp:
                 min_index = min(resid_values)
                 max_index = max(resid_values)
 
-                # print(f"Chaine {chain}, min_index: {min_index}, max_index: {max_index}")
                 subset_matrix = matrix[chain][min_index:max_index + 1, min_index:max_index + 1]
 
                 sns.heatmap(subset_matrix, cmap='coolwarm',  annot=False, ax=axs[i],
@@ -1022,8 +1073,6 @@ class Dssp:
                 plt.show()
 
         else:
-            # num_true = np.sum(self.hbonds[0])
-            # print(f"Nombre de True dans la matrice des liaisons hydrogène : {num_true}")
             resid_values = [atome.resid for atome in self.system.atoms]
             min_index = min(resid_values)
             max_index = max(resid_values)
@@ -1034,8 +1083,6 @@ class Dssp:
                         xticklabels=list(range(min_index, max_index)),
                         yticklabels=list(range(min_index, max_index))
             )
-
-
 
             if display == True:
                 # Sauvegarder et afficher
@@ -1060,7 +1107,7 @@ def main():
         - beta-bridges
         - beta-ladders
         - beta-sheets
-        - bends
+        - bend
         - chirality
     8. Writes the DSSP analysis results to a .txt file
 
@@ -1068,8 +1115,6 @@ def main():
     -----
     The correct DSSP analysis depend on a correctly PDB file provided
     """
-    # system = System()
-
     file_path = check_file_exists()
 
     # Optional : replace N-H names with 'H'
@@ -1077,10 +1122,6 @@ def main():
 
     system = read_pdb(file_path)
     system = remove_residues(system)
-
-    # for atom in system.atoms:
-    #     print(atom.chain, atom.resid, atom.name)
-
 
     system.hbonds_calc()
 
@@ -1098,23 +1139,13 @@ def main():
 
     dssp.nturn_calc()
     dssp.helices_calc()
-    # indices = dssp.helices_calc()
-    # # dssp.color_pymol(indices, color = 'red')
-
-
     dssp.bridge_calc()
     dssp.ladder_calc()
-    # indices = dssp.ladder_calc()
-    # # dssp.color_pymol(indices, color = 'blue')
-
     dssp.sheet_calc()
-
     dssp.bend_calc()
     dssp.chirality_calc()
 
     dssp.write_DSSP()
-
-
 
 
 if __name__ == "__main__":

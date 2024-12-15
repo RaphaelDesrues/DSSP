@@ -4,82 +4,78 @@ import math
 
 def add_h(file_path):
     """Open PDB file and add Hydrogens"""
-    # Lancer PyMOL
+    # Launch PyMOL
     pymol.finish_launching(['pymol', '-c'])
 
-    # Charger le fichier PDB 1g5j
+    # Load the PDB file
     pymol.cmd.load(f'{file_path}', 'myprotein')
 
-    # Ajouter les atomes d'hydrogène
+    # Add the hydrogen atoms
     pymol.cmd.h_add()
 
-    # Sauvegarder le fichier modifié avec les hydrogènes
+    # Save the pdb file with added hydrogens
     pymol.cmd.save(f'{file_path}')
 
-    # Quitter PyMOL (important pour fermer proprement la session)
+    # Quit PyMOL
     pymol.cmd.quit()
 
 
 def reindex_pdb(input_filename):
     """
-    Réindexe les résidus dans le fichier PDB pour que le premier résidu de chaque chaîne commence à 1.
-    Le fichier PDB est réécrit avec les résidus réindexés.
+    Reindex the residues in the PDB file so that the first residue in each chain starts at 1
     """
-    # Lire le fichier PDB et récupérer les lignes
     with open(input_filename, 'r') as pdb_file:
         lines = pdb_file.readlines()
 
-    # Créer un dictionnaire pour stocker le premier numéro de résidu pour chaque chaîne
+    # Create a dictionary to store the first residue number for each chain
     chain_first_residue = {}
 
-    # Passer une première fois sur les lignes pour identifier le premier résidu de chaque chaîne
+    # Pass over the lines once to identify the first residue of each chain
     for line in lines:
         if line.startswith('ATOM'):
-            chain_id = line[21]  # Chaîne est dans la colonne 21 (index 20)
+            chain_id = line[21]
             residue_number = int(line[22:26].strip())
             if chain_id not in chain_first_residue:
                 chain_first_residue[chain_id] = residue_number
 
-    # Réécrire le fichier PDB avec les résidus réindexés
+    # Rewrite the PDB file with reindexed residues
     with open(input_filename, 'w') as pdb_file:
         for line in lines:
             if line.startswith('ATOM') or line.startswith('HETATM'):
-                # Extraire les informations de la ligne
+
                 chain_id = line[21]
                 residue_number = int(line[22:26].strip())
-                
-                # Calculer le décalage pour cette chaîne
+
                 first_residue = chain_first_residue[chain_id]
                 residue_offset = first_residue - 1
-                
-                # Calculer le nouveau numéro de résidu
+
                 new_residue_number = residue_number - residue_offset
-                
-                # Remplacer le numéro de résidu dans la ligne
+
                 new_line = line[:22] + f"{new_residue_number:4d}" + line[26:]
                 pdb_file.write(new_line)
+
             else:
-                # Écrire la ligne sans modification (par exemple, les lignes TER ou HEADER)
+                # Write the line without modification (TER or HEADER lines)
                 pdb_file.write(line)
 
 
 def parse_pdb(filename):
     """
-    Parse un fichier PDB et retourne une liste d'atomes sous forme de dictionnaires.
+    Parse a PDB file and return a list of atoms as dictionaries.
     """
     atoms = []
     with open(filename, 'r') as pdb_file:
         for line in pdb_file:
             if line.startswith('ATOM') or line.startswith('HETATM'):
                 atom = {
-                    'serial': int(line[6:11].strip()),  # Numéro atomique
-                    'name': line[12:16].strip(),       # Nom de l'atome (H, N, etc.)
-                    'residue': line[17:20].strip(),    # Nom du résidu
-                    'chain': line[21],                 # Chaîne
-                    'resi': int(line[22:26].strip()),  # Numéro de résidu
-                    'x': float(line[30:38].strip()),   # Coordonnée X
-                    'y': float(line[38:46].strip()),   # Coordonnée Y
-                    'z': float(line[46:54].strip())    # Coordonnée Z
+                    'serial': int(line[6:11].strip()),
+                    'name': line[12:16].strip(),
+                    'residue': line[17:20].strip(),
+                    'chain': line[21],
+                    'resi': int(line[22:26].strip()),
+                    'x': float(line[30:38].strip()),
+                    'y': float(line[38:46].strip()),
+                    'z': float(line[46:54].strip())
                 }
                 atoms.append(atom)
     return atoms
@@ -87,19 +83,19 @@ def parse_pdb(filename):
 
 def distance(atom1, atom2):
     """
-    Calcul la distance euclidienne entre deux atomes.
+    Calculate the Euclidean distance between two atoms.
     """
     return math.sqrt((atom1['x'] - atom2['x']) ** 2 + (atom1['y'] - atom2['y']) ** 2 + (atom1['z'] - atom2['z']) ** 2)
 
 
 def find_closest_hydrogen(nitrogen_atom, atoms):
     """
-    Trouve l'hydrogène le plus proche d'un atome d'azote et le renomme en 'H'.
+    Find the closest hydrogen to a nitrogen atom and rename it to 'H'.
     """
     closest_hydrogen = None
     min_distance = float('inf')
-    
-    # Sélectionner tous les atomes d'hydrogène du même résidu
+
+    # Select all hydrogen atoms in the same residue
     for atom in atoms:
         if atom['residue'] == nitrogen_atom['residue'] and atom['chain'] == nitrogen_atom['chain'] and atom['name'].startswith('H'):
             dist = distance(nitrogen_atom, atom)
@@ -107,16 +103,16 @@ def find_closest_hydrogen(nitrogen_atom, atoms):
                 min_distance = dist
                 closest_hydrogen = atom
 
-    # Renommer l'hydrogène le plus proche
+    # Rename the closest hydrogen
     if closest_hydrogen:
         closest_hydrogen['name'] = 'H'
-    
+
     return closest_hydrogen
 
 
 def modify_pdb(atoms, output_filename):
     """
-    Modifie le fichier PDB en remplaçant le nom de l'hydrogène par 'H' et sauvegarde le fichier modifié.
+    Modify the PDB file by renaming hydrogen atoms to 'H' and save the modified file.
     """
     with open(output_filename, 'w') as pdb_file:
         for atom in atoms:
@@ -126,28 +122,26 @@ def modify_pdb(atoms, output_filename):
 
 def process_pdb(input_filename):
     """
-    Traite le fichier PDB en trouvant et en renommant les hydrogènes les plus proches des atomes d'azote.
+    Process the PDB file by finding and renaming the closest hydrogens to nitrogen atoms.
     """
-
-    # Ajouter les hydrogènes
+    # Add hydrogens
     add_h(input_filename)
 
-    # Réindexe les numéros de résidus
+    # Reindex residue numbers
     reindex_pdb(input_filename)
 
-    # Parser le fichier PDB
+    # Parse the PDB file
     atoms = parse_pdb(input_filename)
-
     modify_pdb(atoms, input_filename)
 
-    # Trouver tous les atomes d'azote
+    # Find all nitrogen atoms
     nitrogen_atoms = [atom for atom in atoms if atom['name'] == 'N']
-    
-    # Pour chaque azote, trouver l'hydrogène le plus proche et le renommer
+
+    # For each nitrogen atom find the closest hydrogen and rename it
     for nitrogen_atom in nitrogen_atoms:
         find_closest_hydrogen(nitrogen_atom, atoms)
-    
-    # Sauvegarder le fichier modifié
+
+    # Save the modified file
     output_filename = f"{input_filename.split('.')[0]}_modified.pdb"
     modify_pdb(atoms, output_filename)
 
