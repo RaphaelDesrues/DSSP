@@ -8,7 +8,7 @@ Protein Secondary Structure Prediction using the DSSP algorithm. It is based on 
 ## Run the example
 
 ```sh
-python main.py 1g5j.pdb
+python main.py 6xxu.pdb
 ```
 
 ## Reference

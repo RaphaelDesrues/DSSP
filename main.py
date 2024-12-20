@@ -40,7 +40,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 Q1 = 0.42 # Charge for Hbond energy calculation
 Q2 = 0.20 # Charge for Hbond energy calculation
 DIM_F = 332 # Dimensional factor
-ENERGY_CUTOFF = 0.5 # For hbonds ; can be adjusted
+ENERGY_CUTOFF = -0.5 # For hbonds ; can be adjusted
 ABT = string.ascii_uppercase * 4 # Alphabet repetition for labeling
 
 
@@ -426,7 +426,7 @@ class System:
             # Save the matrix for each chain in the dict corresponding to the chainid
             self.hbonds[chain] = chain_index
 
-        # self.plot_hbonds()
+        self.plot_hbonds()
 
 
     def plot_hbonds(self):
@@ -574,7 +574,7 @@ class Dssp:
                         else:
                             continue
 
-        self.plot_heatmap(matrix = self.nturn, title = "nturn", display = False)
+        self.plot_heatmap(matrix = self.nturn, title = "nturn", display = True)
 
 
     def helices_calc(self):
@@ -614,7 +614,7 @@ class Dssp:
                         self.helix[chain][i + 1][j + 1] = 1
                         break
 
-        self.plot_heatmap(self.helix, title = "Helix", display = False)
+        self.plot_heatmap(self.helix, title = "Helix", display = True)
 
         # Convert the integer matrix in string matrix with helices labeling
         for chain in chains:
@@ -707,7 +707,7 @@ class Dssp:
                         elif cond_3 or cond_4:
                             self.bridge[chain][a[1], b[1]] = 2 # AP
 
-        self.plot_heatmap(self.bridge, title = "Bridges", display = False)
+        self.plot_heatmap(self.bridge, title = "Bridges", display = True)
 
 
     def ladder_calc(self):
@@ -747,7 +747,7 @@ class Dssp:
                     else:
                         continue
 
-        self.plot_heatmap(self.ladder, title = "Ladder", display = False)
+        self.plot_heatmap(self.ladder, title = "Ladder", display = True)
 
 
     def sheet_calc(self):
